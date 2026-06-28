@@ -54,6 +54,57 @@ export function normalizePhone(phone: string) {
   return (phone || "").replace(/\D/g, "");
 }
 
+/** True quando o valor é um identificador LID do WhatsApp (ex.: "12345@lid"). */
+export function isLid(value: string | null | undefined): boolean {
+  return !!value && /@lid$/i.test(String(value));
+}
+
+/** Extrai a parte numérica do LID; retorna null se não houver. */
+export function lidDigits(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const m = String(value).match(/^(\d+)@lid$/i);
+  return m ? m[1] : null;
+}
+
+/**
+ * Tenta resolver um LID do WhatsApp para o telefone real via Z-API.
+ * Faz fallback por múltiplos endpoints conhecidos da Z-API.
+ * Retorna o telefone normalizado (somente dígitos) ou null se não resolver.
+ */
+export async function resolveLidToPhone(
+  lid: string,
+  instance: { instance_id: string; token: string; client_token: string | null },
+): Promise<string | null> {
+  const digits = lidDigits(lid) ?? normalizePhone(lid);
+  if (!digits) return null;
+  const base = zapiBase(instance);
+  const headers = zapiHeaders(instance);
+  const candidates = [
+    `${base}/lid-to-phone/${digits}`,
+    `${base}/phone-from-lid/${digits}`,
+    `${base}/chat-metadata/${digits}@lid`,
+    `${base}/chat-metadata/${digits}`,
+  ];
+  for (const url of candidates) {
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 5000);
+      const r = await fetch(url, { headers, signal: ctrl.signal });
+      clearTimeout(t);
+      if (!r.ok) continue;
+      const j: any = await r.json().catch(() => null);
+      if (!j) continue;
+      const phone =
+        j.phone ?? j.number ?? j.realPhone ?? j.userPhone ?? j.id ?? null;
+      const norm = normalizePhone(String(phone ?? ""));
+      if (norm && norm !== digits) return norm;
+    } catch (_e) {
+      // tenta o próximo
+    }
+  }
+  return null;
+}
+
 /** URL pública (HTTPS) do nosso webhook único Z-API. */
 export function buildWebhookUrl(): string | null {
   const token = Deno.env.get("ZAPI_WEBHOOK_TOKEN");
