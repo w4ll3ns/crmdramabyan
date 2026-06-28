@@ -1,65 +1,57 @@
-## Painel de diagnóstico das automações
+## 1. Rotacionar CRON_SECRET via Vault (sem expor em migration)
 
-Tela só-leitura em `Configurações › Automações › Diagnóstico` que verifica de uma vez se a régua tem chance real de disparar.
+**Gerar novo valor** com `secrets--generate_secret` (`CRON_SECRET`, 64 chars) — atualiza a env das edge functions e do servidor TanStack automaticamente. O valor nunca aparece no chat, no SQL nem em qualquer arquivo.
 
-### Rota / acesso
-- Nova aba **"Diagnóstico"** no `SegmentedControl` existente em `src/routes/_authenticated.app.configuracoes.automacoes.tsx` (junto de Réguas / Modelos / Janela / Métricas).
-- Componente novo: `src/components/automacoes/DiagnosticoTab.tsx`.
-
-### Checagens (uma linha de status cada — OK / Atenção / Falha)
-1. **Pausa global** — `settings.automacoes_pausado` deve ser `false`.
-2. **Pausa automática (shadowban)** — `settings.automacoes_pausa_auto.ativo` deve ser `false`; se ativo, mostra `desde` e `motivo` + botão "Retomar" (já existe a mutation).
-3. **Z-API conectada** — lê `zapi_instances` (já feito via `useZapiStatus`); status `connected`.
-4. **Modelos ativos por tipo automático** — `confirmacao`, `lembrete`, `pos_procedimento`, `retorno`, `recall`, `aniversario`, `reativacao`, `no_show`: cada um precisa ter ≥1 ativo. Lista os tipos sem variante ativa.
-5. **Janela de envio** — mostra a janela configurada e se o horário atual (America/Fortaleza) está dentro.
-6. **Cron job agendado** — chamada a uma RPC nova `public.diag_cron_jobs()` (security definer) que devolve `jobname, schedule, active, last_status, last_start` filtrados a jobs cujo `command` contém `/api/public/hooks/reguas-cron`. Sem acesso ao schema `cron` pelo cliente; a RPC encapsula a leitura.
-7. **Última execução do cron** — `last_start` < 5 min e `last_status = 'succeeded'`. Se nunca rodou, status "Falha — cron não está agendado".
-8. **Fila de mensagens** — contagens em `mensagens_agendadas`:
-   - `pendentes` (status `pendente`, `agendado_para <= now() + 24h`)
-   - `atrasadas` (status `pendente`, `agendado_para < now() - 5 min`) → vermelho se >0
-   - `enviando` (status `enviando` há mais de 10 min) → atenção
-   - `falhas_24h` (status `falha` nas últimas 24h)
-9. **Próximas 5 mensagens** — lista `tipo`, `paciente.nome`, `agendado_para` (BRT), `status`, das próximas 5 pendentes.
-
-### Dados (sem mudanças de schema)
-- Migração só adiciona a RPC `diag_cron_jobs()`:
+**Migration nova** (SQL versionado, sem segredo literal):
+- `CREATE EXTENSION IF NOT EXISTS supabase_vault;`
+- Apaga entrada antiga, se existir: `DELETE FROM vault.secrets WHERE name = 'cron_secret';`
+- Reagenda os 3 jobs lendo o valor do Vault em runtime, ex.:
   ```sql
-  CREATE OR REPLACE FUNCTION public.diag_cron_jobs()
-  RETURNS TABLE(jobname text, schedule text, active boolean,
-                last_status text, last_start timestamptz)
-  LANGUAGE sql SECURITY DEFINER SET search_path = public, cron AS $$
-    SELECT j.jobname, j.schedule, j.active,
-           r.status::text, r.start_time
-      FROM cron.job j
-      LEFT JOIN LATERAL (
-        SELECT status, start_time FROM cron.job_run_details
-         WHERE jobid = j.jobid ORDER BY start_time DESC LIMIT 1
-      ) r ON true
-     WHERE j.command ILIKE '%/api/public/hooks/reguas-cron%';
-  $$;
-  REVOKE ALL ON FUNCTION public.diag_cron_jobs() FROM PUBLIC, anon;
-  GRANT EXECUTE ON FUNCTION public.diag_cron_jobs() TO authenticated;
+  SELECT cron.unschedule('processar-mensagens-5min');
+  SELECT cron.schedule(
+    'processar-mensagens-5min','*/5 * * * *',
+    $$
+    SELECT net.http_post(
+      url := 'https://ehbgrqqleluhyzwwhbol.supabase.co/functions/v1/processar-mensagens-agendadas',
+      headers := jsonb_build_object(
+        'Content-Type','application/json',
+        'apikey', current_setting('app.settings.anon_key', true),
+        'x-cron-secret',
+        (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name='cron_secret')
+      ),
+      body := '{}'::jsonb
+    );
+    $$
+  );
   ```
-  Restringido a `authenticated`; o componente já está atrás do gate `_authenticated` e da aba admin.
+  (o `apikey` continua sendo a anon key publishable, inline — não é segredo.)
 
-### Hook
-- `src/hooks/useDiagnostico.ts` com `useDiagnostico()` que faz em paralelo:
-  - select em `settings` (chaves: `automacoes_pausado`, `automacoes_pausa_auto`, `regua_janela`, etc.)
-  - select em `zapi_instances`
-  - select em `modelos_mensagem` agrupado por tipo
-  - `rpc('diag_cron_jobs')`
-  - contagens em `mensagens_agendadas` (head + count exact)
-  - próximas 5 pendentes (join paciente)
-- `refetchInterval: 30_000` enquanto a aba estiver aberta.
+**Inserir o segredo no Vault** sem versionar: feito com `supabase--insert` (ferramenta read-only-em-migrations, mas grava direto), executando `SELECT vault.create_secret(:value, 'cron_secret');` com o novo valor passado como parâmetro. Esse passo não cria arquivo SQL.
 
-### UI
-- Cards verticais, cada checagem como `StatusRow` (ícone ✓/⚠/✗, título, descrição curta, "como resolver" quando falha).
-- Bloco final: tabela das próximas 5 mensagens.
-- Botão "Re-checar agora" → `refetch()`.
+**Re-escrever a migration histórica que vazou o valor** (`20260628203848_…sql` linhas 227/239/251): substituir as 3 strings hardcoded por placeholder `__CRON_SECRET_VIA_VAULT__` num comentário explicando que os jobs reais são reagendados pela migration nova. Isso garante que `git grep <valor_antigo>` retorne vazio em qualquer commit futuro (commits antigos do histórico Git permanecem — o valor já está rotacionado, então não é mais válido).
 
-### Critérios de aceite
-- [ ] Aba "Diagnóstico" aparece em `Configurações › Automações` (admin).
-- [ ] Cada checagem mostra status verde/amarelo/vermelho com motivo.
-- [ ] Se o cron não estiver agendado ou nunca tiver rodado, aparece destaque vermelho com o nome esperado do job.
-- [ ] Lista de próximas 5 mensagens reflete o que está em `mensagens_agendadas`.
-- [ ] Nenhuma alteração nas funções de envio, nos modelos ou nas réguas.
+## 2. Apontar cron para produção
+
+Trocar nos 2 jobs de régua:
+- `https://project--ad354cb1-87ea-4a9c-8eed-f91574a39190.lovable.app/...`
+- por: `https://crmdramabyan.lovable.app/api/public/hooks/reguas-cron?job=…`
+
+`processar-mensagens-5min` continua chamando `…supabase.co/functions/v1/…`.
+
+Validar com `supabase--read_query` chamando `SELECT * FROM public.diag_cron_jobs();` após o reagendamento e confirmar `active=true` nos 3.
+
+## 3. Remover `.env` do versionamento
+
+- Adicionar `.env` ao `.gitignore` (não está lá hoje).
+- `git rm --cached .env` via shell.
+- Manter o arquivo local intacto. As únicas chaves dentro dele já são públicas (`VITE_SUPABASE_*`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` = anon publishable). `SERVICE_ROLE`, `CRON_SECRET`, `ZAPI_WEBHOOK_TOKEN` permanecem só como secrets do ambiente (já estão).
+
+## Validação final
+- `git grep 55c65dc8` → vazio (após edição da migration antiga).
+- `git ls-files | grep -x .env` → vazio.
+- `diag_cron_jobs()` lista 3 jobs ativos apontando para domínios corretos.
+- Chamada manual ao endpoint com header antigo → 401; com novo (lido do Vault no cron) → 200.
+
+### Confirmações necessárias
+1. Posso re-escrever a migration histórica `20260628203848_…sql` removendo o valor literal antigo do `CRON_SECRET`? (O DB de produção não é re-executado, só limpa o histórico do repo.)
+2. Confirma `crmdramabyan.lovable.app` como domínio de produção alvo das duas réguas?
