@@ -982,7 +982,13 @@ export type Database = {
         | "no_show"
         | "manual"
       msg_origem: "automacao" | "manual"
-      msg_status: "pendente" | "enviada" | "cancelada" | "falhou" | "respondida"
+      msg_status:
+        | "pendente"
+        | "enviando"
+        | "enviada"
+        | "cancelada"
+        | "falhou"
+        | "respondida"
       oportunidade_status: "aberta" | "ganha" | "perdida"
       origem_type:
         | "instagram"
@@ -1169,7 +1175,14 @@ export const Constants = {
         "manual",
       ],
       msg_origem: ["automacao", "manual"],
-      msg_status: ["pendente", "enviada", "cancelada", "falhou", "respondida"],
+      msg_status: [
+        "pendente",
+        "enviando",
+        "enviada",
+        "cancelada",
+        "falhou",
+        "respondida",
+      ],
       oportunidade_status: ["aberta", "ganha", "perdida"],
       origem_type: [
         "instagram",
