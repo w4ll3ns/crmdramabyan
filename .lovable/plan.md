@@ -1,57 +1,99 @@
-## 1. Rotacionar CRON_SECRET via Vault (sem expor em migration)
+## Retry com backoff em `processar-mensagens-agendadas`
 
-**Gerar novo valor** com `secrets--generate_secret` (`CRON_SECRET`, 64 chars) — atualiza a env das edge functions e do servidor TanStack automaticamente. O valor nunca aparece no chat, no SQL nem em qualquer arquivo.
+### 1. Setting nova
+Inserir via `supabase--insert` (não migration, é dado):
+```sql
+INSERT INTO public.settings (chave, valor)
+VALUES ('automacoes_max_tentativas', '3'::jsonb)
+ON CONFLICT (chave) DO NOTHING;
+```
 
-**Migration nova** (SQL versionado, sem segredo literal):
-- `CREATE EXTENSION IF NOT EXISTS supabase_vault;`
-- Apaga entrada antiga, se existir: `DELETE FROM vault.secrets WHERE name = 'cron_secret';`
-- Reagenda os 3 jobs lendo o valor do Vault em runtime, ex.:
-  ```sql
-  SELECT cron.unschedule('processar-mensagens-5min');
-  SELECT cron.schedule(
-    'processar-mensagens-5min','*/5 * * * *',
-    $$
-    SELECT net.http_post(
-      url := 'https://ehbgrqqleluhyzwwhbol.supabase.co/functions/v1/processar-mensagens-agendadas',
-      headers := jsonb_build_object(
-        'Content-Type','application/json',
-        'apikey', current_setting('app.settings.anon_key', true),
-        'x-cron-secret',
-        (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name='cron_secret')
-      ),
-      body := '{}'::jsonb
-    );
-    $$
-  );
-  ```
-  (o `apikey` continua sendo a anon key publishable, inline — não é segredo.)
+### 2. Mudança na edge function `supabase/functions/processar-mensagens-agendadas/index.ts`
 
-**Inserir o segredo no Vault** sem versionar: feito com `supabase--insert` (ferramenta read-only-em-migrations, mas grava direto), executando `SELECT vault.create_secret(:value, 'cron_secret');` com o novo valor passado como parâmetro. Esse passo não cria arquivo SQL.
+**Ler a setting** junto com as outras no topo:
+```ts
+const maxTent = clampInt(Number(getSetting<number>(rows, "automacoes_max_tentativas", 3)), 1, 10);
+```
 
-**Re-escrever a migration histórica que vazou o valor** (`20260628203848_…sql` linhas 227/239/251): substituir as 3 strings hardcoded por placeholder `__CRON_SECRET_VIA_VAULT__` num comentário explicando que os jobs reais são reagendados pela migration nova. Isso garante que `git grep <valor_antigo>` retorne vazio em qualquer commit futuro (commits antigos do histórico Git permanecem — o valor já está rotacionado, então não é mais válido).
+**Helper de backoff** (constante no arquivo):
+```ts
+const BACKOFF_MIN = [10, 30, 60]; // minutos para tentativa 1, 2, 3...
+function backoffMsFor(tent: number): number {
+  const i = Math.max(0, Math.min(tent - 1, BACKOFF_MIN.length - 1));
+  return BACKOFF_MIN[i] * 60 * 1000;
+}
+```
 
-## 2. Apontar cron para produção
+**No loop, isolar a "falha transitória"** (não-shadowban). Hoje há 2 caminhos que marcam `falhou`:
+- `!resp.ok || sb_hit` (resposta da Z-API)
+- `catch (e)` (exceção de rede)
 
-Trocar nos 2 jobs de régua:
-- `https://project--ad354cb1-87ea-4a9c-8eed-f91574a39190.lovable.app/...`
-- por: `https://crmdramabyan.lovable.app/api/public/hooks/reguas-cron?job=…`
+Refatorar ambos: se `sb_hit` (shadowban), manter o comportamento atual (`falhou` + `ativarPausaAutoShadowban` + `break`). Se for falha transitória:
 
-`processar-mensagens-5min` continua chamando `…supabase.co/functions/v1/…`.
+```ts
+const erroTxt = (errorText || `zapi ${resp.status}`).slice(0, 500);
+if (m.tentativas >= maxTent) {
+  await sb.from("mensagens_agendadas").update({
+    status: "falhou", erro: erroTxt,
+  }).eq("id", m.id);
+  falhas++;
+} else {
+  const nova = new Date(Date.now() + backoffMsFor(m.tentativas)).toISOString();
+  await sb.rpc("reagendar_mensagem", { _id: m.id, _nova: nova });
+  await sb.from("mensagens_agendadas").update({ erro: erroTxt }).eq("id", m.id);
+  reagendadas++;
+}
+continue;
+```
 
-Validar com `supabase--read_query` chamando `SELECT * FROM public.diag_cron_jobs();` após o reagendamento e confirmar `active=true` nos 3.
+Aplicar o mesmo padrão no `catch`. Atenção: `reagendar_mensagem` já volta status para `pendente` e não toca em `tentativas` (o incremento vem do `claim_mensagens_pendentes`), então o contador segue evoluindo a cada retentativa.
 
-## 3. Remover `.env` do versionamento
+Falhas pré-envio que **não** são transitórias (paciente inexistente, opt-out, conteúdo vazio, telefone vazio, sem instância Z-API) **continuam** marcando `falhou`/`cancelada` direto — não fazem sentido reagendar.
 
-- Adicionar `.env` ao `.gitignore` (não está lá hoje).
-- `git rm --cached .env` via shell.
-- Manter o arquivo local intacto. As únicas chaves dentro dele já são públicas (`VITE_SUPABASE_*`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` = anon publishable). `SERVICE_ROLE`, `CRON_SECRET`, `ZAPI_WEBHOOK_TOKEN` permanecem só como secrets do ambiente (já estão).
+**Contador `reagendadas`** já existe no retorno JSON; a retentativa por backoff também incrementa esse contador (semanticamente é "voltou pra fila").
 
-## Validação final
-- `git grep 55c65dc8` → vazio (após edição da migration antiga).
-- `git ls-files | grep -x .env` → vazio.
-- `diag_cron_jobs()` lista 3 jobs ativos apontando para domínios corretos.
-- Chamada manual ao endpoint com header antigo → 401; com novo (lido do Vault no cron) → 200.
+### 3. Guarda anti-loop em `claim_mensagens_pendentes`
 
-### Confirmações necessárias
-1. Posso re-escrever a migration histórica `20260628203848_…sql` removendo o valor literal antigo do `CRON_SECRET`? (O DB de produção não é re-executado, só limpa o histórico do repo.)
-2. Confirma `crmdramabyan.lovable.app` como domínio de produção alvo das duas réguas?
+Para garantir que nada com `tentativas >= max` seja reclamado mesmo se algo escapar, ajustar a função via migration:
+
+```sql
+CREATE OR REPLACE FUNCTION public.claim_mensagens_pendentes(_limit integer)
+RETURNS SETOF public.mensagens_agendadas
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  _max int;
+BEGIN
+  SELECT COALESCE((valor)::text::int, 3) INTO _max
+    FROM public.settings WHERE chave = 'automacoes_max_tentativas';
+  _max := COALESCE(_max, 3);
+
+  RETURN QUERY
+  UPDATE public.mensagens_agendadas m
+     SET status = 'enviando'::public.msg_status,
+         tentativas = COALESCE(m.tentativas, 0) + 1,
+         updated_at = now()
+   WHERE m.id IN (
+     SELECT id FROM public.mensagens_agendadas
+      WHERE status = 'pendente'::public.msg_status
+        AND agendado_para <= now()
+        AND COALESCE(tentativas, 0) < _max
+      ORDER BY agendado_para
+      LIMIT GREATEST(1, _limit)
+      FOR UPDATE SKIP LOCKED
+   )
+  RETURNING m.*;
+END $$;
+```
+
+Isso garante o corte por tentativas mesmo se a edge function tiver bug, e impede reenvio infinito.
+
+### 4. Sem mudanças
+- Comportamento de shadowban (pausa automática + alerta + `break`) permanece intocado.
+- Janela de envio, claim atômico, tetos hora/dia, delays Z-API, opt-out: nada muda.
+- `reagendar_mensagem` continua igual (já volta para `pendente`).
+
+### Critérios de aceite
+- [ ] Falha não-shadowban com `tentativas < max` → volta para `pendente` com `agendado_para = now + backoff(tent)`, `erro` preenchido, status NÃO vira `falhou`.
+- [ ] Após 3ª tentativa fracassada → `falhou` definitivo.
+- [ ] Shadowban no 1º envio → `falhou` + pausa automática, sem retry.
+- [ ] Mensagem com `tentativas >= max` nunca mais é reclamada por `claim_mensagens_pendentes`.
