@@ -31,6 +31,12 @@ import {
   type MediaKind,
 } from "@/lib/chatMedia";
 import { useAudioRecorder, extFromMime } from "@/hooks/useAudioRecorder";
+import { AudioPlayer } from "@/components/conversa/AudioPlayer";
+import {
+  ImageMessage,
+  VideoMessage,
+  DocumentMessage,
+} from "@/components/conversa/MediaBubble";
 
 type Message = {
   id: string;
@@ -92,44 +98,41 @@ function StatusIcon({ status }: { status: string | null }) {
 
 function Bubble({ m }: { m: Message }) {
   const out = m.direction === "outbound";
+  const isVisualMedia = (m.type === "image" || m.type === "video") && m.media_url;
   return (
     <div className={cn("flex w-full", out ? "justify-end" : "justify-start")}>
       <div
         className={cn(
-          "max-w-[78%] rounded-2xl px-3 py-2 shadow-soft",
+          "max-w-[78%] rounded-2xl shadow-soft",
+          isVisualMedia ? "p-1.5" : "px-3 py-2",
           out
             ? "bg-primary/15 text-foreground rounded-br-sm"
             : "bg-card text-foreground border border-border rounded-bl-sm",
         )}
       >
         {m.type === "image" && m.media_url ? (
-          <a href={m.media_url} target="_blank" rel="noreferrer">
-            <img
-              src={m.media_url}
-              alt=""
-              className="rounded-xl max-h-64 object-cover"
-            />
-          </a>
+          <ImageMessage src={m.media_url} />
         ) : null}
         {m.type === "audio" && m.media_url ? (
-          <audio controls src={m.media_url} className="max-w-full" />
+          <AudioPlayer src={m.media_url} outbound={out} />
         ) : null}
         {m.type === "video" && m.media_url ? (
-          <video controls src={m.media_url} className="rounded-xl max-h-64" />
+          <VideoMessage src={m.media_url} />
         ) : null}
         {m.type === "document" && m.media_url ? (
-          <a
-            href={m.media_url}
-            target="_blank"
-            rel="noreferrer"
-            className="flex items-center gap-2 text-label underline"
-          >
-            <FileText className="h-4 w-4" strokeWidth={1.5} />
-            {m.content_text || "Documento"}
-          </a>
+          <DocumentMessage
+            src={m.media_url}
+            filename={m.content_text}
+            caption={null}
+          />
         ) : null}
-        {m.content_text && m.type !== "document" ? (
-          <div className="text-label whitespace-pre-wrap break-words">
+        {m.content_text && m.type !== "document" && m.type !== "audio" ? (
+          <div
+            className={cn(
+              "text-label whitespace-pre-wrap break-words",
+              isVisualMedia ? "px-1.5 pt-1.5" : "",
+            )}
+          >
             {m.content_text}
           </div>
         ) : null}
@@ -137,6 +140,7 @@ function Bubble({ m }: { m: Message }) {
           className={cn(
             "flex items-center gap-1 mt-1 text-[10px] text-muted-foreground",
             out ? "justify-end" : "justify-start",
+            isVisualMedia ? "px-1.5 pb-0.5" : "",
           )}
         >
           <span>{formatTime(m.sent_at ?? m.created_at)}</span>
