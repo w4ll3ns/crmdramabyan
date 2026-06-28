@@ -11,6 +11,7 @@ import { AgendamentoDetailSheet } from "@/components/agenda/AgendamentoDetailShe
 import {
   type AgendamentoFull,
   useAgendamentosRange,
+  useAConfirmarHojeCount,
 } from "@/hooks/useAgenda";
 import {
   addDays,
