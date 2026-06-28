@@ -80,7 +80,9 @@ function HomePage() {
       {/* Saudação */}
       <section className="px-5 pt-8 pb-2 flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-caption text-muted-foreground">{greeting()},</p>
+          <p className="text-caption text-muted-foreground" suppressHydrationWarning>
+            {mounted ? `${greeting()},` : "Olá,"}
+          </p>
           <h1
             className="mt-1 text-foreground leading-[1.05] tracking-tight"
             style={{
@@ -91,8 +93,8 @@ function HomePage() {
           >
             {name.data ?? "…"}
           </h1>
-          <p className="text-caption text-muted-foreground mt-2 capitalize">
-            {today.label}
+          <p className="text-caption text-muted-foreground mt-2 capitalize" suppressHydrationWarning>
+            {mounted ? today.label : ""}
           </p>
         </div>
         <Link
