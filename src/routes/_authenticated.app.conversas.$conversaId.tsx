@@ -39,6 +39,7 @@ import {
   DocumentMessage,
 } from "@/components/conversa/MediaBubble";
 import { AgendarMensagemSheet } from "@/components/automacoes/AgendarMensagemSheet";
+import { renderTemplate } from "@/lib/templates";
 
 
 type Message = {
