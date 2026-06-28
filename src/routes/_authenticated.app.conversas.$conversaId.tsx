@@ -170,6 +170,7 @@ function ConversaDetail() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [modelosOpen, setModelosOpen] = useState(false);
   const [anexoOpen, setAnexoOpen] = useState(false);
+  const [agendarMsgOpen, setAgendarMsgOpen] = useState(false);
 
   // Preview de arquivo escolhido
   const [pendingFile, setPendingFile] = useState<File | null>(null);
