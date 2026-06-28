@@ -34,7 +34,7 @@ function useAgendaRealtime() {
   const qc = useQueryClient();
   useEffect(() => {
     const channel = supabase
-      .channel("agendamentos-changes")
+      .channel(`agendamentos-changes-${Math.random().toString(36).slice(2)}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "agendamentos" },
