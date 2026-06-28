@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Calendar,
   MessageCircle,
@@ -65,16 +65,24 @@ function HomePage() {
   const navigate = useNavigate();
   const isAdmin = useIsAdmin();
   const [quickOpen, setQuickOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   const name = useGreetingName();
   const today = useToday();
+  const followups = useFollowupsAtrasadosCount();
+  const aConfirmar = useAConfirmarHojeCount();
+  const unread = useUnreadCount();
+  const leadsNovos = useLeadsNovosCount();
 
   return (
     <>
       {/* Saudação */}
       <section className="px-5 pt-8 pb-2 flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-caption text-muted-foreground">{greeting()},</p>
+          <p className="text-caption text-muted-foreground" suppressHydrationWarning>
+            {mounted ? `${greeting()},` : "Olá,"}
+          </p>
           <h1
             className="mt-1 text-foreground leading-[1.05] tracking-tight"
             style={{
@@ -85,8 +93,8 @@ function HomePage() {
           >
             {name.data ?? "…"}
           </h1>
-          <p className="text-caption text-muted-foreground mt-2 capitalize">
-            {today.label}
+          <p className="text-caption text-muted-foreground mt-2 capitalize" suppressHydrationWarning>
+            {mounted ? today.label : ""}
           </p>
         </div>
         <Link
@@ -129,29 +137,29 @@ function HomePage() {
           icon={MessageCircle}
           label="Conversas"
           hint="não lidas"
-          value={useUnreadCount()}
+          value={unread}
         />
         <StatTile
           to="/app/funil"
           icon={Sparkles}
           label="Leads novos"
           hint="últimos 7d"
-          value={useLeadsNovosCount().data ?? 0}
+          value={leadsNovos.data ?? 0}
         />
         <StatTile
           to="/app/funil"
           icon={Clock}
           label="Follow-ups"
           hint="atrasados"
-          value={useFollowupsAtrasadosCount().data ?? 0}
-          tone={(useFollowupsAtrasadosCount().data ?? 0) > 0 ? "warning" : "default"}
+          value={followups.data ?? 0}
+          tone={(followups.data ?? 0) > 0 ? "warning" : "default"}
         />
         <StatTile
           to="/app/pacientes"
           icon={Users}
           label="Pacientes"
           hint="ativos hoje"
-          value={useAConfirmarHojeCount()}
+          value={aConfirmar}
         />
       </section>
 
