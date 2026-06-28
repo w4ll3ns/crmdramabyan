@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
 export const REGUA_KEYS = [
-  "regua_pausado",
+  "automacoes_pausado",
   "regua_confirmacao",
   "regua_lembrete",
   "regua_pos_procedimento",
