@@ -25,7 +25,7 @@ import { PacienteSheet } from "@/components/pacientes/PacienteSheet";
 import { AnamneseForm } from "@/components/pacientes/AnamneseForm";
 import { FotosTab } from "@/components/pacientes/FotosTab";
 import { StatusBadge } from "@/components/brand/StatusBadge";
-import { statusMeta } from "@/lib/agenda";
+import { STATUS_LABEL, STATUS_VARIANT } from "@/lib/agenda";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/app/pacientes/$pacienteId")({
@@ -186,7 +186,6 @@ function ResumoTab({ pacienteId }: { pacienteId: string }) {
       ) : (
         <ul className="flex flex-col gap-2">
           {data.map((a: any) => {
-            const meta = statusMeta(a.status);
             return (
               <li
                 key={a.id}
