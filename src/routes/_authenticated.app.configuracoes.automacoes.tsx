@@ -66,18 +66,21 @@ function AutomacoesPage() {
       <div className="px-5">
         <SegmentedControl
           value={tab}
-          onChange={(v) => setTab(v as "janela" | "modelos")}
+          onChange={(v) => setTab(v as Tab)}
           options={[
-            { value: "janela", label: "Janela & limites" },
+            { value: "reguas", label: "Réguas" },
             { value: "modelos", label: "Modelos" },
+            { value: "janela", label: "Janela" },
+            { value: "metricas", label: "Métricas" },
           ]}
         />
       </div>
 
       <div className="px-5 mt-5">
-        {tab === "janela" ? (
-          <JanelaConfigForm />
-        ) : (
+        {tab === "reguas" ? <ReguasTab /> : null}
+        {tab === "janela" ? <JanelaConfigForm /> : null}
+        {tab === "metricas" ? <PainelMetricas /> : null}
+        {tab === "modelos" ? (
           <div className="flex flex-col gap-4">
             <div>
               <label className="text-caption text-muted-foreground">Tipo</label>
@@ -116,8 +119,9 @@ function AutomacoesPage() {
               </div>
             )}
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );
 }
+
