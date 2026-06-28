@@ -1,75 +1,39 @@
-# Player de áudio estilo WhatsApp + visualização de mídia na conversa
+## Objetivo
 
-Hoje o `Bubble` mostra mídia com elementos HTML crus (`<audio controls>`, `<img>`, `<video controls>`, link de documento). Vamos trocar por componentes próprios que se parecem com o WhatsApp e suportam download.
+Renderizar previews de imagens HEIC/HEIF (iPhone) dentro da conversa convertendo-as para JPEG no navegador, sem alterar o arquivo original no Storage — o download e o envio ao WhatsApp continuam usando o HEIC original.
 
-## 1. `AudioPlayer` (novo componente)
+## Abordagem
 
-`src/components/conversa/AudioPlayer.tsx` — player customizado para áudios recebidos e enviados.
+Usar a biblioteca `heic2any` (pura JS/WASM, ~200KB, roda no browser) carregada via **import dinâmico** apenas quando um HEIC for detectado. Isso evita pesar o bundle inicial.
 
-Layout (horizontal, dentro da bolha):
-- Botão circular **Play/Pause** (44px) à esquerda.
-- **Barra de progresso** (track fino + thumb) clicável e arrastável (`<input type="range">` estilizado) que mostra a posição.
-- **Tempo** à direita: enquanto parado mostra duração total; durante a reprodução mostra tempo restante (`-0:12`), igual WhatsApp.
-- Botão **Download** (ícone seta) no canto que dispara download do arquivo (fetch do blob + `URL.createObjectURL` + `<a download>` para forçar mesmo em URL assinada).
-- Cores: usa tokens do tema (`bg-primary/15` herdado da bolha; track `bg-muted-foreground/30`, fill `bg-primary`).
+A conversão acontece dentro do `ImageMessage`: ao detectar extensão `.heic`/`.heif` (ou `onError` da `<img>` por MIME desconhecido), buscamos o blob via `fetch(src)`, convertemos para JPEG e usamos um `URL.createObjectURL` como `src` do preview e do lightbox. O botão de download continua apontando para a URL assinada original.
 
-Comportamento:
-- Usa `<audio>` invisível interno, lê `duration`, `currentTime`, dispara `timeupdate`.
-- Lida com `duration = Infinity` de WebM/OGG: faz seek hack (`audio.currentTime = 1e9`) para forçar a duração antes de exibir.
-- Só um player tocando por vez: um event bus simples (módulo singleton com `Set<HTMLAudioElement>`) pausa os outros ao dar play.
-- Mantém o áudio carregado em `preload="metadata"` para não baixar tudo de cara.
+## Mudanças
 
-Substitui o `<audio controls>` atual em `Bubble`.
+### 1. `package.json`
+- Adicionar `heic2any` via `bun add heic2any`.
 
-## 2. `ImageMessage`, `VideoMessage`, `DocumentMessage` (no mesmo arquivo `MediaBubble.tsx`)
+### 2. `src/lib/heicConvert.ts` (novo)
+- `isHeic(name: string): boolean` — checa extensões `heic`/`heif`.
+- `convertHeicToJpegUrl(src: string): Promise<string>` — fetch → blob → `heic2any({ blob, toType: "image/jpeg", quality: 0.85 })` → `URL.createObjectURL`. Import dinâmico de `heic2any` para code-splitting.
+- Cache em `Map<string, Promise<string>>` para não reconverter a mesma URL entre re-renders/lightbox.
 
-`src/components/conversa/MediaBubble.tsx`:
+### 3. `src/components/conversa/MediaBubble.tsx`
+- No `ImageMessage`:
+  - Estado `previewUrl: string | null` (URL convertida) e `converting: boolean`.
+  - Se `isHeic(name)` ou `<img onError>`: disparar `convertHeicToJpegUrl(src)`; enquanto carrega, mostrar skeleton/placeholder com nome do arquivo; em sucesso, usar `previewUrl` no `<img>` do thumb e do lightbox.
+  - Se a conversão falhar, manter o fallback atual (renderiza `DocumentMessage`).
+  - `downloadMedia` segue chamado com `src` original (HEIC preservado).
+  - `URL.revokeObjectURL` no unmount via `useEffect` cleanup.
 
-**ImageMessage**:
-- Thumb com `object-cover`, `max-h-72`, borda arredondada.
-- Clique abre **Lightbox** (Dialog full-screen do shadcn) com a imagem grande, botão Fechar e botão Download (mesma lógica blob-download).
-- Mostra um pequeno ícone de download flutuando no canto inferior direito da thumb também.
+### 4. Sem mudanças em
+- `chatMedia.ts` (upload original permanece HEIC).
+- Edge function `zapi-send` (Z-API recebe o HEIC original; o WhatsApp do destinatário lida nativamente).
+- Schema / RLS / Storage bucket.
 
-**VideoMessage**:
-- `<video>` com poster (primeiro frame via `preload="metadata"` + `#t=0.1`) e `controls`.
-- Botão **Download** sobreposto no canto.
-- `max-h-72`, `rounded-xl`, `bg-black`.
+## Detalhes técnicos
 
-**DocumentMessage**:
-- Card com ícone grande do tipo (`FileText` para PDF/doc, `FileSpreadsheet` para xls, `File` genérico).
-- Nome do arquivo (do `filename` quando disponível ou derivado da URL).
-- Tamanho/extensão em texto pequeno (extensão extraída da URL/filename).
-- Dois botões pequenos: **Abrir** (link `target="_blank"`) e **Baixar** (download via blob).
-
-## 3. Helper `downloadMedia(url, filename)`
-
-`src/lib/downloadMedia.ts`:
-- `fetch(url)` → `blob()` → cria `<a>` com `download={filename}` e clica.
-- Fallback: se o fetch falhar (CORS na URL assinada), abre `window.open(url)` como degradação.
-- Deriva filename quando não fornecido: último segmento do path da URL.
-
-## 4. Ajustes em `Bubble`
-
-`src/routes/_authenticated.app.conversas.$conversaId.tsx`:
-- Importa `AudioPlayer`, `ImageMessage`, `VideoMessage`, `DocumentMessage`.
-- Para `audio`: passa também `direction` (cor do botão muda em outbound) e usa o `filename` se existir no `media_url`.
-- Para documento, deixa de embutir o `content_text` como nome — usa `filename` real; mantém legenda em parágrafo abaixo se `content_text` existir e for diferente.
-- Bolha de mídia sem padding nas bordas quando for imagem/vídeo (já tem `rounded-xl` interno), preserva padding para áudio e documento.
-
-## 5. Detalhes técnicos
-
-- Nenhuma mudança no schema, edge functions ou rotas.
-- Não muda o fluxo de envio; só a renderização das mensagens recebidas/enviadas.
-- O áudio gravado pelo usuário (WebM/OGG/MP4) usa o mesmo player — o hack de duração cobre os três casos.
-- Lightbox usa o `Dialog` do shadcn já presente, sem nova dep.
-- Ícones: `Play`, `Pause`, `Download`, `X`, `FileText`, `FileSpreadsheet`, `File` (todos do `lucide-react` já em uso).
-
-## 6. Validação
-
-- Áudio recebido toca/pausa com botão; barra avança; tempo restante decresce.
-- Clique na barra faz seek.
-- Tocar outro áudio pausa o anterior.
-- Botão de download salva o arquivo localmente com nome correto.
-- Imagem abre em lightbox; download funciona dentro do lightbox.
-- Vídeo reproduz inline; botão de download baixa o arquivo.
-- Documento mostra nome + extensão e abre/baixa.
+- `heic2any` é client-only; nunca importar no topo de arquivos compartilhados com SSR — apenas dentro da função `convertHeicToJpegUrl` com `await import("heic2any")`.
+- Limite prático: `heic2any` pode levar 1–3s e usar memória significativa em imagens grandes. Mostrar estado "Convertendo…" no card.
+- O cache é por URL assinada; como ela é estável durante 7 dias, evita retrabalho ao reabrir o lightbox ou rolar a lista.
+- O `onError` da `<img>` ainda cobre HEIC servido com MIME genérico (`application/octet-stream`) ou outros formatos não suportados que não tenham extensão reconhecida.
