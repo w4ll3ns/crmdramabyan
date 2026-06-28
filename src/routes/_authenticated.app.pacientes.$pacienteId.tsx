@@ -12,6 +12,7 @@ import {
   ShieldOff,
   Camera as CameraIcon,
   CameraOff,
+  Clock,
 } from "lucide-react";
 import { BrandAvatar } from "@/components/brand/Avatar";
 import { SegmentedControl } from "@/components/brand/SegmentedControl";
@@ -27,6 +28,7 @@ import { FotosTab } from "@/components/pacientes/FotosTab";
 import { StatusBadge } from "@/components/brand/StatusBadge";
 import { STATUS_LABEL, STATUS_VARIANT } from "@/lib/agenda";
 import { toast } from "sonner";
+import { AgendarMensagemSheet } from "@/components/automacoes/AgendarMensagemSheet";
 
 export const Route = createFileRoute("/_authenticated/app/pacientes/$pacienteId")({
   component: PacienteDetalhePage,
@@ -174,8 +176,18 @@ function ConsentBadge({
 
 function ResumoTab({ pacienteId }: { pacienteId: string }) {
   const { data } = useAgendamentosDoPaciente(pacienteId);
+  const { data: paciente } = usePaciente(pacienteId);
+  const [agendarMsgOpen, setAgendarMsgOpen] = useState(false);
   return (
     <div className="flex flex-col gap-3 pb-28">
+      <Button
+        variant="outline"
+        className="self-start"
+        onClick={() => setAgendarMsgOpen(true)}
+      >
+        <Clock className="h-4 w-4 mr-2" />
+        Agendar mensagem
+      </Button>
       <div className="text-caption uppercase tracking-wide text-muted-foreground">
         Agendamentos
       </div>
@@ -214,6 +226,15 @@ function ResumoTab({ pacienteId }: { pacienteId: string }) {
           })}
         </ul>
       )}
+      <AgendarMensagemSheet
+        open={agendarMsgOpen}
+        onOpenChange={setAgendarMsgOpen}
+        pacienteId={pacienteId}
+        defaultVars={{
+          nome: paciente?.nome,
+          primeiro_nome: (paciente?.nome ?? "").split(" ")[0],
+        }}
+      />
     </div>
   );
 }

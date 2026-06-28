@@ -2,3 +2,6 @@ project_id = "ehbgrqqleluhyzwwhbol"
 
 [functions.zapi-webhook]
 verify_jwt = false
+
+[functions.processar-mensagens-agendadas]
+verify_jwt = false

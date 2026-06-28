@@ -299,6 +299,95 @@ export type Database = {
           },
         ]
       }
+      mensagens_agendadas: {
+        Row: {
+          agendado_para: string
+          agendamento_id: string | null
+          conteudo_renderizado: string
+          conversation_id: string | null
+          created_at: string
+          created_by: string | null
+          enviada_em: string | null
+          erro: string | null
+          id: string
+          modelo_id: string | null
+          origem: Database["public"]["Enums"]["msg_origem"]
+          paciente_id: string
+          status: Database["public"]["Enums"]["msg_status"]
+          tentativas: number
+          tipo: Database["public"]["Enums"]["modelo_tipo"]
+          updated_at: string
+          variaveis: Json
+        }
+        Insert: {
+          agendado_para: string
+          agendamento_id?: string | null
+          conteudo_renderizado?: string
+          conversation_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          enviada_em?: string | null
+          erro?: string | null
+          id?: string
+          modelo_id?: string | null
+          origem?: Database["public"]["Enums"]["msg_origem"]
+          paciente_id: string
+          status?: Database["public"]["Enums"]["msg_status"]
+          tentativas?: number
+          tipo?: Database["public"]["Enums"]["modelo_tipo"]
+          updated_at?: string
+          variaveis?: Json
+        }
+        Update: {
+          agendado_para?: string
+          agendamento_id?: string | null
+          conteudo_renderizado?: string
+          conversation_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          enviada_em?: string | null
+          erro?: string | null
+          id?: string
+          modelo_id?: string | null
+          origem?: Database["public"]["Enums"]["msg_origem"]
+          paciente_id?: string
+          status?: Database["public"]["Enums"]["msg_status"]
+          tentativas?: number
+          tipo?: Database["public"]["Enums"]["modelo_tipo"]
+          updated_at?: string
+          variaveis?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mensagens_agendadas_agendamento_id_fkey"
+            columns: ["agendamento_id"]
+            isOneToOne: false
+            referencedRelation: "agendamentos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mensagens_agendadas_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mensagens_agendadas_modelo_id_fkey"
+            columns: ["modelo_id"]
+            isOneToOne: false
+            referencedRelation: "modelos_mensagem"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mensagens_agendadas_paciente_id_fkey"
+            columns: ["paciente_id"]
+            isOneToOne: false
+            referencedRelation: "pacientes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       messages: {
         Row: {
           content_text: string | null
@@ -348,6 +437,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      modelos_mensagem: {
+        Row: {
+          ativo: boolean
+          corpo: string
+          created_at: string
+          id: string
+          nome: string
+          tipo: Database["public"]["Enums"]["modelo_tipo"]
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          corpo?: string
+          created_at?: string
+          id?: string
+          nome: string
+          tipo: Database["public"]["Enums"]["modelo_tipo"]
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          corpo?: string
+          created_at?: string
+          id?: string
+          nome?: string
+          tipo?: Database["public"]["Enums"]["modelo_tipo"]
+          updated_at?: string
+        }
+        Relationships: []
       }
       oportunidades: {
         Row: {
@@ -752,6 +871,10 @@ export type Database = {
         }
         Returns: boolean
       }
+      render_template: {
+        Args: { template: string; vars: Json }
+        Returns: string
+      }
     }
     Enums: {
       agendamento_status:
@@ -783,6 +906,19 @@ export type Database = {
       foto_categoria: "antes" | "depois" | "evolucao"
       message_direction: "inbound" | "outbound"
       message_type: "text" | "image" | "audio" | "video" | "document"
+      modelo_tipo:
+        | "boas_vindas"
+        | "confirmacao"
+        | "lembrete"
+        | "pos_procedimento"
+        | "retorno"
+        | "recall"
+        | "aniversario"
+        | "reativacao"
+        | "no_show"
+        | "manual"
+      msg_origem: "automacao" | "manual"
+      msg_status: "pendente" | "enviada" | "cancelada" | "falhou" | "respondida"
       oportunidade_status: "aberta" | "ganha" | "perdida"
       origem_type:
         | "instagram"
@@ -956,6 +1092,20 @@ export const Constants = {
       foto_categoria: ["antes", "depois", "evolucao"],
       message_direction: ["inbound", "outbound"],
       message_type: ["text", "image", "audio", "video", "document"],
+      modelo_tipo: [
+        "boas_vindas",
+        "confirmacao",
+        "lembrete",
+        "pos_procedimento",
+        "retorno",
+        "recall",
+        "aniversario",
+        "reativacao",
+        "no_show",
+        "manual",
+      ],
+      msg_origem: ["automacao", "manual"],
+      msg_status: ["pendente", "enviada", "cancelada", "falhou", "respondida"],
       oportunidade_status: ["aberta", "ganha", "perdida"],
       origem_type: [
         "instagram",
