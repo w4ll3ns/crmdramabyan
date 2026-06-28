@@ -362,6 +362,29 @@ Deno.serve(async (req) => {
       sent_at: sentAtIso,
     });
 
+    // Opt-out: se inbound text contém palavra-chave configurada, marca paciente
+    if (!fromMe && type === "text" && content_text && pacienteId) {
+      try {
+        const { data: setting } = await sb
+          .from("settings")
+          .select("valor")
+          .eq("chave", "automacoes_palavra_optout")
+          .maybeSingle();
+        const palavra = String(setting?.valor ?? "sair").toLowerCase().trim();
+        if (palavra && content_text.toLowerCase().trim() === palavra) {
+          await sb.from("pacientes").update({ aceita_automacoes: false }).eq("id", pacienteId);
+          await sb
+            .from("mensagens_agendadas")
+            .update({ status: "cancelada", erro: "opt-out" })
+            .eq("paciente_id", pacienteId)
+            .eq("status", "pendente")
+            .eq("origem", "automacao");
+        }
+      } catch (e) {
+        console.error("opt-out check failed", e);
+      }
+    }
+
     return new Response(JSON.stringify({ ok: true }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
