@@ -1,11 +1,11 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { StatCard } from "@/components/brand/StatCard";
 import { SectionHeader } from "@/components/brand/SectionHeader";
 import { ListRow } from "@/components/brand/ListRow";
 import { StatusBadge } from "@/components/brand/StatusBadge";
 import { Fab } from "@/components/brand/Fab";
-import { Calendar, MessageCircle, Sparkles, Plus } from "lucide-react";
+import { Calendar, MessageCircle, Sparkles, Plus, Zap, Smartphone } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/_authenticated/app/")({
