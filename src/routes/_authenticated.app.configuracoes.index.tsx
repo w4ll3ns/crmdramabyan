@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Zap, Smartphone, ChevronRight, Settings, ShieldAlert, Variable, Building2 } from "lucide-react";
+import { Zap, Smartphone, ChevronRight, Settings, ShieldAlert, Variable, Building2, CalendarDays } from "lucide-react";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 
 export const Route = createFileRoute("/_authenticated/app/configuracoes/")({
