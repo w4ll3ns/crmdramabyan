@@ -212,6 +212,6 @@ function ConversasPage() {
   );
 }
 
-export const Route = createFileRoute("/_authenticated/app/conversas")({
+export const Route = createFileRoute("/_authenticated/app/conversas/")({
   component: ConversasPage,
 });
