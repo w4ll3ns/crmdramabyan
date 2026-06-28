@@ -11,6 +11,7 @@ import {
   FileText,
   CalendarPlus,
   MessageSquareText,
+  Clock,
   Mic,
   Camera,
   Image as ImageIcon,
