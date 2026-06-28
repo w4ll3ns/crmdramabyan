@@ -21,6 +21,7 @@ import { Route as AuthenticatedAppFunilRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedAppAgendaRouteImport } from './routes/_authenticated.app.agenda'
 import { Route as AuthenticatedAppConversasIndexRouteImport } from './routes/_authenticated.app.conversas.index'
 import { Route as AuthenticatedAppConfiguracoesIndexRouteImport } from './routes/_authenticated.app.configuracoes.index'
+import { Route as ApiPublicHooksReguasCronRouteImport } from './routes/api/public/hooks/reguas-cron'
 import { Route as AuthenticatedAppPacientesPacienteIdRouteImport } from './routes/_authenticated.app.pacientes.$pacienteId'
 import { Route as AuthenticatedAppConversasConversaIdRouteImport } from './routes/_authenticated.app.conversas.$conversaId'
 import { Route as AuthenticatedAppConfiguracoesZapiRouteImport } from './routes/_authenticated.app.configuracoes.zapi'
@@ -88,6 +89,12 @@ const AuthenticatedAppConfiguracoesIndexRoute =
     path: '/configuracoes/',
     getParentRoute: () => AuthenticatedAppRoute,
   } as any)
+const ApiPublicHooksReguasCronRoute =
+  ApiPublicHooksReguasCronRouteImport.update({
+    id: '/api/public/hooks/reguas-cron',
+    path: '/api/public/hooks/reguas-cron',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const AuthenticatedAppPacientesPacienteIdRoute =
   AuthenticatedAppPacientesPacienteIdRouteImport.update({
     id: '/$pacienteId',
@@ -127,6 +134,7 @@ export interface FileRoutesByFullPath {
   '/app/configuracoes/zapi': typeof AuthenticatedAppConfiguracoesZapiRoute
   '/app/conversas/$conversaId': typeof AuthenticatedAppConversasConversaIdRoute
   '/app/pacientes/$pacienteId': typeof AuthenticatedAppPacientesPacienteIdRoute
+  '/api/public/hooks/reguas-cron': typeof ApiPublicHooksReguasCronRoute
   '/app/configuracoes/': typeof AuthenticatedAppConfiguracoesIndexRoute
   '/app/conversas/': typeof AuthenticatedAppConversasIndexRoute
 }
@@ -143,6 +151,7 @@ export interface FileRoutesByTo {
   '/app/configuracoes/zapi': typeof AuthenticatedAppConfiguracoesZapiRoute
   '/app/conversas/$conversaId': typeof AuthenticatedAppConversasConversaIdRoute
   '/app/pacientes/$pacienteId': typeof AuthenticatedAppPacientesPacienteIdRoute
+  '/api/public/hooks/reguas-cron': typeof ApiPublicHooksReguasCronRoute
   '/app/configuracoes': typeof AuthenticatedAppConfiguracoesIndexRoute
   '/app/conversas': typeof AuthenticatedAppConversasIndexRoute
 }
@@ -162,6 +171,7 @@ export interface FileRoutesById {
   '/_authenticated/app/configuracoes/zapi': typeof AuthenticatedAppConfiguracoesZapiRoute
   '/_authenticated/app/conversas/$conversaId': typeof AuthenticatedAppConversasConversaIdRoute
   '/_authenticated/app/pacientes/$pacienteId': typeof AuthenticatedAppPacientesPacienteIdRoute
+  '/api/public/hooks/reguas-cron': typeof ApiPublicHooksReguasCronRoute
   '/_authenticated/app/configuracoes/': typeof AuthenticatedAppConfiguracoesIndexRoute
   '/_authenticated/app/conversas/': typeof AuthenticatedAppConversasIndexRoute
 }
@@ -181,6 +191,7 @@ export interface FileRouteTypes {
     | '/app/configuracoes/zapi'
     | '/app/conversas/$conversaId'
     | '/app/pacientes/$pacienteId'
+    | '/api/public/hooks/reguas-cron'
     | '/app/configuracoes/'
     | '/app/conversas/'
   fileRoutesByTo: FileRoutesByTo
@@ -197,6 +208,7 @@ export interface FileRouteTypes {
     | '/app/configuracoes/zapi'
     | '/app/conversas/$conversaId'
     | '/app/pacientes/$pacienteId'
+    | '/api/public/hooks/reguas-cron'
     | '/app/configuracoes'
     | '/app/conversas'
   id:
@@ -215,6 +227,7 @@ export interface FileRouteTypes {
     | '/_authenticated/app/configuracoes/zapi'
     | '/_authenticated/app/conversas/$conversaId'
     | '/_authenticated/app/pacientes/$pacienteId'
+    | '/api/public/hooks/reguas-cron'
     | '/_authenticated/app/configuracoes/'
     | '/_authenticated/app/conversas/'
   fileRoutesById: FileRoutesById
@@ -225,6 +238,7 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   StyleRoute: typeof StyleRoute
+  ApiPublicHooksReguasCronRoute: typeof ApiPublicHooksReguasCronRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -312,6 +326,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/app/configuracoes/'
       preLoaderRoute: typeof AuthenticatedAppConfiguracoesIndexRouteImport
       parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/api/public/hooks/reguas-cron': {
+      id: '/api/public/hooks/reguas-cron'
+      path: '/api/public/hooks/reguas-cron'
+      fullPath: '/api/public/hooks/reguas-cron'
+      preLoaderRoute: typeof ApiPublicHooksReguasCronRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_authenticated/app/pacientes/$pacienteId': {
       id: '/_authenticated/app/pacientes/$pacienteId'
@@ -408,6 +429,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   StyleRoute: StyleRoute,
+  ApiPublicHooksReguasCronRoute: ApiPublicHooksReguasCronRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
