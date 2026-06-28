@@ -353,7 +353,7 @@ function ProximoRow({ a }: { a: AgendamentoFull }) {
   };
   return (
     <div className="flex items-center gap-3 py-1">
-      <Avatar name={a.paciente?.nome ?? "Paciente"} src={a.paciente?.foto_url ?? null} size={36} />
+      <BrandAvatar name={a.paciente?.nome ?? "Paciente"} size={36} />
       <div className="flex-1 min-w-0">
         <div className="text-label text-foreground truncate">
           {a.paciente?.nome ?? "Paciente"}
