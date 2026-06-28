@@ -39,6 +39,39 @@ export function useUpdateModelo() {
   });
 }
 
+export function useCreateModelo() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (m: { nome: string; tipo: ModeloTipo; corpo?: string; ativo?: boolean }) => {
+      const { data, error } = await supabase
+        .from("modelos_mensagem")
+        .insert({
+          nome: m.nome,
+          tipo: m.tipo,
+          corpo: m.corpo ?? "",
+          ativo: m.ativo ?? true,
+        })
+        .select("*")
+        .single();
+      if (error) throw error;
+      return data as Modelo;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["modelos_mensagem"] }),
+  });
+}
+
+export function useDeleteModelo() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("modelos_mensagem").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["modelos_mensagem"] }),
+  });
+}
+
+
 export type MensagemAgendada = {
   id: string;
   paciente_id: string;
