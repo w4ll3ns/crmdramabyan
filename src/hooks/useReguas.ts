@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 
 export const REGUA_KEYS = [
   "automacoes_pausado",
+  "automacoes_pausa_auto",
   "regua_confirmacao",
   "regua_lembrete",
   "regua_pos_procedimento",

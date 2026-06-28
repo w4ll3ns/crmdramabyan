@@ -124,6 +124,43 @@ Deno.serve(async (req) => {
           .update({ status: mapped })
           .in("external_message_id", ids);
       }
+
+      // Circuit breaker de shadowban a partir do callback de envio
+      const errText = [
+        body.error, body.errorDescription, body.statusDescription,
+        body.message, body.reason, body.description,
+      ].filter(Boolean).map((x: any) => String(x)).join(" | ").toLowerCase();
+      const patterns = [
+        "shadow ban", "shadowban",
+        "did not have permission to send this message",
+        "whatsapp rejected sending this message",
+      ];
+      const hit = patterns.find((p) => errText.includes(p));
+      if (hit) {
+        const valor = { ativo: true, motivo: hit, desde: new Date().toISOString() };
+        await sb.from("settings").upsert(
+          { chave: "automacoes_pausa_auto", valor: valor as never },
+          { onConflict: "chave" },
+        );
+        const desde = new Date(Date.now() - 6 * 3600 * 1000).toISOString();
+        const { data: existing } = await sb
+          .from("tasks")
+          .select("id")
+          .eq("titulo", "Possível shadowban Z-API — automações pausadas")
+          .gt("created_at", desde)
+          .maybeSingle();
+        if (!existing) {
+          await sb.from("tasks").insert({
+            titulo: "Possível shadowban Z-API — automações pausadas",
+            descricao:
+              `O WhatsApp/Z-API retornou via webhook: "${hit}". Envio automático pausado. ` +
+              `Não reenvie — insistir piora o bloqueio. Verifique o número e retome no painel.`,
+            prioridade: "alta",
+            status: "pendente",
+          });
+        }
+      }
+
       return new Response(JSON.stringify({ ok: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

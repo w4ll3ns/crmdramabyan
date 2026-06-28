@@ -77,6 +77,9 @@ export function ReguasTab() {
   const { data: reguas, isLoading } = useReguas();
   const set = useSetRegua();
   const pausado = (reguas?.automacoes_pausado as boolean | undefined) ?? false;
+  const pausaAuto = (reguas?.automacoes_pausa_auto as
+    | { ativo?: boolean; motivo?: string | null; desde?: string | null }
+    | undefined) ?? { ativo: false };
 
   if (isLoading) return <div className="text-muted-foreground">Carregando…</div>;
 
@@ -86,8 +89,41 @@ export function ReguasTab() {
     toast.success("Régua atualizada");
   };
 
+  const retomarShadowban = async () => {
+    await set.mutateAsync({
+      chave: "automacoes_pausa_auto",
+      valor: { ativo: false, motivo: null, desde: null },
+    });
+    toast.success("Automações retomadas");
+  };
+
   return (
     <div className="flex flex-col gap-3">
+      {pausaAuto?.ativo ? (
+        <div className="rounded-2xl border border-warning/40 bg-warning/10 p-4 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-label text-warning-foreground">
+              Pausado automaticamente (possível shadowban)
+            </div>
+            <p className="text-caption text-muted-foreground mt-1 break-words">
+              {pausaAuto.motivo
+                ? `Motivo: "${pausaAuto.motivo}".`
+                : "O WhatsApp rejeitou um envio."}{" "}
+              {pausaAuto.desde
+                ? `Desde ${new Date(pausaAuto.desde).toLocaleString("pt-BR")}.`
+                : ""}{" "}
+              Insistir piora o bloqueio.
+            </p>
+          </div>
+          <button
+            onClick={retomarShadowban}
+            className="shrink-0 h-9 px-3 rounded-lg bg-warning text-warning-foreground text-label"
+          >
+            Retomar
+          </button>
+        </div>
+      ) : null}
+
       <div className="rounded-2xl bg-card shadow-soft p-4 flex items-center justify-between">
         <div>
           <div className="text-label">Pausa global</div>
