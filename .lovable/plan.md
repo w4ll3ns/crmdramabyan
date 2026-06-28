@@ -1,57 +1,68 @@
-## Correções de automações (enum, pausa, nome_clinica, segredo cron)
+## Endurecimento Z-API: claim atômico, delays nativos, teto de destinatários, shadowban breaker
 
-### 1. Migration SQL única
-Arquivo novo em `supabase/migrations/`:
+Implementa as 5 frentes pedidas seguindo a documentação Z-API (`/send-text` aceita `delayTyping` e `delayMessage` em segundos, 1–15) e adiciona pausa automática por shadowban com retomada manual ou após cooldown.
 
-- **Recriar `public.trg_agendamento_after_update`** idêntica à atual, trocando apenas `'alta'::public.task_prioridade` por `'alta'::public.task_priority` no `INSERT INTO public.tasks` do ramo `status = 'faltou'`. Resto da função preservado.
-- **Recriar `public.enfileirar_automacao(...)`** idêntica à atual, trocando o `SELECT ... FROM public.settings WHERE chave = 'regua_pausado'` por `'automacoes_pausado'`. Resto preservado.
-- **Seed/migração de chave**: `INSERT INTO public.settings(chave, valor) VALUES ('automacoes_pausado', 'false'::jsonb) ON CONFLICT (chave) DO NOTHING;` e, se existir `regua_pausado`, copiar valor para `automacoes_pausado` quando este ainda for default.
-- **Padronizar `clinica_nome`**: `INSERT ... ('clinica_nome', '"Clínica"'::jsonb) ON CONFLICT DO NOTHING;` e, se existir `nome_clinica` com valor não vazio e `clinica_nome` inexistente/vazio, copiar.
-- **Revogar execução pública**:
-  ```sql
-  REVOKE EXECUTE ON FUNCTION public.run_regua_aniversario() FROM PUBLIC, anon, authenticated;
-  REVOKE EXECUTE ON FUNCTION public.run_regua_reativacao() FROM PUBLIC, anon, authenticated;
-  REVOKE EXECUTE ON FUNCTION public.enfileirar_automacao(uuid, public.modelo_tipo, timestamptz, uuid, jsonb, text, uuid) FROM PUBLIC, anon, authenticated;
-  GRANT EXECUTE ON FUNCTION ... TO service_role;
-  ```
-  Triggers continuam funcionando (SECURITY DEFINER).
+### 1. Migration SQL (uma migration única)
 
-### 2. Secret CRON_SECRET
-- Gerar com `generate_secret` (64 chars), nome `CRON_SECRET`. Fica disponível tanto para edge functions quanto para o runtime do TanStack (Cloudflare Worker).
+- **Enum**: `ALTER TYPE public.msg_status ADD VALUE IF NOT EXISTS 'enviando' BEFORE 'enviada';`
+- **Settings (seed conservador, `ON CONFLICT DO NOTHING`)**:
+  - `zapi_delay_typing_min=3`, `zapi_delay_typing_max=6`
+  - `zapi_delay_message_min=2`, `zapi_delay_message_max=4`
+  - `zapi_max_destinatarios_hora=15`, `zapi_max_destinatarios_dia=40`
+  - `automacoes_pausa_auto={"ativo": false, "motivo": null, "desde": null}`
+  - `automacoes_shadowban_cooldown_horas=6`
+- **RPC `public.claim_mensagens_pendentes(_limit int)`** (SECURITY DEFINER, `GRANT EXECUTE` só a `service_role`):
+  - `UPDATE mensagens_agendadas SET status='enviando', tentativas=tentativas+1 WHERE id IN (SELECT id FROM mensagens_agendadas WHERE status='pendente' AND agendado_para<=now() ORDER BY agendado_para LIMIT _limit FOR UPDATE SKIP LOCKED) RETURNING ...` (com join lateral para retornar dados de paciente/modelo).
+- **RPC `public.reagendar_excedente(_id uuid, _nova timestamptz)`**: volta a linha de `enviando`→`pendente` com `agendado_para=_nova`. Mesmo grant.
 
-### 3. Edge function `processar-mensagens-agendadas/index.ts`
-- No topo do handler, antes de qualquer trabalho:
-  ```ts
-  const provided = req.headers.get('x-cron-secret');
-  const expected = Deno.env.get('CRON_SECRET');
-  if (!expected || provided !== expected) {
-    return new Response(JSON.stringify({ error: 'unauthorized' }), {
-      status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-  }
-  ```
-  (mantém `OPTIONS` preflight livre).
-- Trocar `getSetting<string>(rows, "nome_clinica", "Clínica")` por `"clinica_nome"`.
-- Leitura de `automacoes_pausado` já está correta — manter.
+### 2. Edge function `processar-mensagens-agendadas`
 
-### 4. Rota `src/routes/api/public/hooks/reguas-cron.ts`
-- Mesma checagem `x-cron-secret` antes do `rpc`. `process.env.CRON_SECRET` lido dentro do handler. 401 sem header válido.
+Reescreve o loop principal:
 
-### 5. Frontend `src/components/automacoes/ReguasTab.tsx`
-- Atualmente o switch global usa `chave: "regua_pausado"`. Trocar para `"automacoes_pausado"` na chamada `set.mutateAsync` e na leitura `reguas?.regua_pausado` → `reguas?.automacoes_pausado`.
-- Verificar `src/hooks/useReguas.ts` para incluir `automacoes_pausado` na lista de chaves carregadas (se houver allowlist) — se já busca livre por chave, nada a fazer.
-- Tela de Configurações da clínica (`_authenticated.app.configuracoes.index.tsx`): garantir que o campo de nome grava `clinica_nome` (não `nome_clinica`). Vou inspecionar o arquivo durante a implementação e ajustar se necessário.
+1. Lê settings. Se `automacoes_pausado` **ou** `automacoes_pausa_auto.ativo=true` (e `desde + cooldown_horas > now()`): sai com `skipped`. Se cooldown expirou, limpa o auto-pausa e segue.
+2. Janela 08–20h preservada (reagenda pendentes para próxima janela como hoje).
+3. Calcula `lote` para caber em ~4 min de envios (cada envio gasta `delayTyping + delayMessage + gap 2–6s`; pior caso ~27s → lote máx ≈ 8). Cap final: `min(automacoes_limite_minuto * 5, 10)`.
+4. Chama `rpc('claim_mensagens_pendentes', { _limit })` em vez de SELECT — só processa o que reivindicou.
+5. **Teto de destinatários distintos** antes de cada envio:
+   - Contagem de `paciente_id` distintos com `status='enviada'` em `mensagens_agendadas` na última 1h e no dia (fuso `automacoes_fuso`).
+   - Se já no teto e o paciente atual ainda não está nesse conjunto: chama `reagendar_excedente` empurrando para o próximo bucket horário (ou início da janela do dia seguinte se diário batido) e segue para o próximo item — não conta como falha.
+6. **Envio com delays nativos**: `body = { phone, message, delayTyping: rand(min,max,clamp 1..15), delayMessage: rand(min,max,clamp 1..15) }`. Mantém o `sleep(2000+rand*4000)` entre iterações.
+7. **Detecção de shadowban** na resposta (ok ou erro) — match case-insensitive de `shadow ban`, `Did not have permission to send this message`, `Whatsapp rejected sending this message`. Ao detectar:
+   - `UPDATE mensagens_agendadas SET status='falhou', erro=<texto>` para a mensagem atual.
+   - `UPDATE settings SET valor=jsonb_build_object('ativo',true,'motivo',<texto>,'desde',now()) WHERE chave='automacoes_pausa_auto'`.
+   - Cria `tasks` com `prioridade='alta'`, título "Possível shadowban Z-API — automações pausadas", descrição com motivo.
+   - **break** do loop; retorna `{ ok:true, shadowban:true }`.
+8. Em sucesso: `status='enviada'`, `enviada_em=now()`, grava em `messages` / `conversations` (já existe). Em falha não-shadowban: `status='falhou'`.
+9. `clinica_nome` já corrigido em turno anterior.
 
-### 6. Cron jobs no banco
-- Listar `cron.job` para `processar-mensagens-agendadas` e `reguas-cron`; atualizar `headers` JSON adicionando `"x-cron-secret": "<valor>"`. Será feito via `supabase--insert` após a secret existir, lendo o valor através de `current_setting` não é possível — então passamos o valor literal nos `cron.alter_job`/reschedule. Vou listar os jobs existentes primeiro para reagendar com o header correto preservando schedule e URL.
+### 3. Edge function `zapi-webhook`
 
-### Validação pós-deploy
-- `psql` test: UPDATE de um agendamento para `'faltou'` (em ambiente de teste) — espera sucesso e linha em `tasks`.
-- `curl` no endpoint sem header → 401; com header → 200.
-- Toggle pausa no frontend reflete em `settings.automacoes_pausado` e processador pula execução.
-- Render de template com `{{nome_clinica}}` traz o valor de `clinica_nome`.
+No bloco de status de mensagem (após mapear `mapped`): se a `body` carregar campo de erro/descrição (`error`, `errorDescription`, `statusDescription`, `message`) que case com as strings de shadowban, executa a mesma rotina:
+
+- `UPDATE settings ... automacoes_pausa_auto={ativo:true, motivo, desde:now()}`
+- Cria task de alerta (uma por janela de 6h, dedup por título+`created_at > now()-6h`).
+- Marca a mensagem ligada pelo `external_message_id` como `status='falhou'` em `mensagens_agendadas` (via join por `external_message_id` em `messages` → `conversation_id` + tempo? — solução prática: já gravamos `external_message_id` em `messages`; em `mensagens_agendadas` não há FK direta, então localizamos pelo par `(conversation_id, conteudo_renderizado, enviada_em)` ou simplesmente paramos por o próximo ciclo). **Simplificação aceitável**: só ativa o breaker e abre task; o processador já não enviará mais até retomada.
+
+### 4. Frontend `ReguasTab.tsx`
+
+- Lê `automacoes_pausa_auto` via `useReguas` (adicionar à `REGUA_KEYS`).
+- Acima do card de "Pausa global", quando `automacoes_pausa_auto.ativo===true`, renderiza um banner âmbar:
+  - Texto: "Automações pausadas automaticamente — possível shadowban no WhatsApp." + motivo + "desde {fmt}".
+  - Botão "Retomar agora" → seta `{ativo:false, motivo:null, desde:null}` em `automacoes_pausa_auto`.
+- Toggle global existente continua mexendo em `automacoes_pausado`.
+
+### 5. Validação pós-deploy
+
+- `SELECT * FROM public.claim_mensagens_pendentes(5);` duas vezes seguidas (sem commit entre) confirma SKIP LOCKED.
+- `curl` da edge com lote pequeno: logs mostram `delayTyping`/`delayMessage` no payload Z-API.
+- Inserir 20 `mensagens_agendadas` pendentes para 20 pacientes distintos: somente 15 saem na 1ª janela horária, restantes ficam `pendente` com `agendado_para` deslocado.
+- Simular resposta Z-API com `error: "Whatsapp rejected sending this message"` → `automacoes_pausa_auto.ativo=true`, task criada, próximas execuções respondem `skipped`.
+- Botão "Retomar" no painel limpa a flag e novo cron volta a enviar.
 
 ### Detalhes técnicos
-- A função `enfileirar_automacao` tem assinatura com 7 args (incluindo defaults) — o `REVOKE` precisa da assinatura completa exata.
-- `CRON_SECRET` no Worker: `process.env.CRON_SECRET` dentro do handler (não no módulo). No Deno edge: `Deno.env.get('CRON_SECRET')`.
-- Sem mudanças em `supabase/config.toml`.
+
+- `ALTER TYPE ... ADD VALUE` não pode rodar dentro de transação com uso imediato; a migration vai conter apenas o ADD VALUE e seed, e a RPC vai numa segunda migration (ou separa em commits dentro do mesmo arquivo via `COMMIT;`). Vou usar **duas migrations** para não esbarrar nessa restrição.
+- `automacoes_pausa_auto` é jsonb objeto; leitura no edge: `const auto = getSetting<{ativo:boolean,motivo:string|null,desde:string|null}>(rows,'automacoes_pausa_auto',{ativo:false,motivo:null,desde:null})`.
+- Contagem de destinatários distintos via duas queries leves: `select paciente_id from mensagens_agendadas where status='enviada' and enviada_em >= now()-interval '1 hour'` e dia (`enviada_em::date AT TIME ZONE tz = today`). Mantemos em `Set<string>` no processo.
+- Reagendamento de excedente horário: `nova = now() + interval '1 hour'`; diário batido: `nextWindowStartISO(tz, janelaIni)` do próximo dia.
+- `claim_mensagens_pendentes` retorna `mensagens_agendadas.*` + colunas planas de paciente/modelo necessárias; alternativa: retorna só ids e o edge faz `SELECT ... WHERE id = ANY($ids) AND status='enviando'`. Vou usar a segunda forma, mais simples.

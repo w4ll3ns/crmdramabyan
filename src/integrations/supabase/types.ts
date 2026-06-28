@@ -914,6 +914,34 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      claim_mensagens_pendentes: {
+        Args: { _limit: number }
+        Returns: {
+          agendado_para: string
+          agendamento_id: string | null
+          conteudo_renderizado: string
+          conversation_id: string | null
+          created_at: string
+          created_by: string | null
+          enviada_em: string | null
+          erro: string | null
+          id: string
+          modelo_id: string | null
+          origem: Database["public"]["Enums"]["msg_origem"]
+          paciente_id: string
+          status: Database["public"]["Enums"]["msg_status"]
+          tentativas: number
+          tipo: Database["public"]["Enums"]["modelo_tipo"]
+          updated_at: string
+          variaveis: Json
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "mensagens_agendadas"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       enfileirar_automacao: {
         Args: {
           _agendado_para: string
@@ -932,6 +960,10 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      reagendar_mensagem: {
+        Args: { _id: string; _nova: string }
+        Returns: undefined
       }
       render_template: {
         Args: { template: string; vars: Json }
@@ -982,7 +1014,13 @@ export type Database = {
         | "no_show"
         | "manual"
       msg_origem: "automacao" | "manual"
-      msg_status: "pendente" | "enviada" | "cancelada" | "falhou" | "respondida"
+      msg_status:
+        | "pendente"
+        | "enviando"
+        | "enviada"
+        | "cancelada"
+        | "falhou"
+        | "respondida"
       oportunidade_status: "aberta" | "ganha" | "perdida"
       origem_type:
         | "instagram"
@@ -1169,7 +1207,14 @@ export const Constants = {
         "manual",
       ],
       msg_origem: ["automacao", "manual"],
-      msg_status: ["pendente", "enviada", "cancelada", "falhou", "respondida"],
+      msg_status: [
+        "pendente",
+        "enviando",
+        "enviada",
+        "cancelada",
+        "falhou",
+        "respondida",
+      ],
       oportunidade_status: ["aberta", "ganha", "perdida"],
       origem_type: [
         "instagram",
