@@ -80,6 +80,77 @@ export type Database = {
           },
         ]
       }
+      anamneses: {
+        Row: {
+          alergias: string | null
+          contraindicacoes: string | null
+          created_at: string
+          doencas_cronicas: string | null
+          expectativas: string | null
+          fumante: boolean
+          gestante_lactante: boolean
+          historico_herpes: boolean
+          historico_queloide: boolean
+          id: string
+          observacoes_clinicas: string | null
+          paciente_id: string
+          preenchida_por: string | null
+          procedimentos_anteriores: string | null
+          queixa_principal: string | null
+          updated_at: string
+          usa_anticoagulante: boolean
+          uso_medicamentos: string | null
+        }
+        Insert: {
+          alergias?: string | null
+          contraindicacoes?: string | null
+          created_at?: string
+          doencas_cronicas?: string | null
+          expectativas?: string | null
+          fumante?: boolean
+          gestante_lactante?: boolean
+          historico_herpes?: boolean
+          historico_queloide?: boolean
+          id?: string
+          observacoes_clinicas?: string | null
+          paciente_id: string
+          preenchida_por?: string | null
+          procedimentos_anteriores?: string | null
+          queixa_principal?: string | null
+          updated_at?: string
+          usa_anticoagulante?: boolean
+          uso_medicamentos?: string | null
+        }
+        Update: {
+          alergias?: string | null
+          contraindicacoes?: string | null
+          created_at?: string
+          doencas_cronicas?: string | null
+          expectativas?: string | null
+          fumante?: boolean
+          gestante_lactante?: boolean
+          historico_herpes?: boolean
+          historico_queloide?: boolean
+          id?: string
+          observacoes_clinicas?: string | null
+          paciente_id?: string
+          preenchida_por?: string | null
+          procedimentos_anteriores?: string | null
+          queixa_principal?: string | null
+          updated_at?: string
+          usa_anticoagulante?: boolean
+          uso_medicamentos?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "anamneses_paciente_id_fkey"
+            columns: ["paciente_id"]
+            isOneToOne: true
+            referencedRelation: "pacientes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       audit_logs: {
         Row: {
           action: string
@@ -157,6 +228,73 @@ export type Database = {
             columns: ["paciente_id"]
             isOneToOne: false
             referencedRelation: "pacientes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fotos_paciente: {
+        Row: {
+          agendamento_id: string | null
+          angulo: Database["public"]["Enums"]["foto_angulo"]
+          categoria: Database["public"]["Enums"]["foto_categoria"]
+          consentimento_uso: boolean
+          created_at: string
+          created_by: string | null
+          data_foto: string
+          id: string
+          observacao: string | null
+          paciente_id: string
+          procedimento_id: string | null
+          storage_path: string
+        }
+        Insert: {
+          agendamento_id?: string | null
+          angulo?: Database["public"]["Enums"]["foto_angulo"]
+          categoria: Database["public"]["Enums"]["foto_categoria"]
+          consentimento_uso?: boolean
+          created_at?: string
+          created_by?: string | null
+          data_foto?: string
+          id?: string
+          observacao?: string | null
+          paciente_id: string
+          procedimento_id?: string | null
+          storage_path: string
+        }
+        Update: {
+          agendamento_id?: string | null
+          angulo?: Database["public"]["Enums"]["foto_angulo"]
+          categoria?: Database["public"]["Enums"]["foto_categoria"]
+          consentimento_uso?: boolean
+          created_at?: string
+          created_by?: string | null
+          data_foto?: string
+          id?: string
+          observacao?: string | null
+          paciente_id?: string
+          procedimento_id?: string | null
+          storage_path?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fotos_paciente_agendamento_id_fkey"
+            columns: ["agendamento_id"]
+            isOneToOne: false
+            referencedRelation: "agendamentos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fotos_paciente_paciente_id_fkey"
+            columns: ["paciente_id"]
+            isOneToOne: false
+            referencedRelation: "pacientes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fotos_paciente_procedimento_id_fkey"
+            columns: ["procedimento_id"]
+            isOneToOne: false
+            referencedRelation: "procedimentos"
             referencedColumns: ["id"]
           },
         ]
@@ -641,6 +779,8 @@ export type Database = {
         | "cliente"
         | "pos_procedimento"
         | "perdido"
+      foto_angulo: "frontal" | "perfil_direito" | "perfil_esquerdo" | "outro"
+      foto_categoria: "antes" | "depois" | "evolucao"
       message_direction: "inbound" | "outbound"
       message_type: "text" | "image" | "audio" | "video" | "document"
       oportunidade_status: "aberta" | "ganha" | "perdida"
@@ -812,6 +952,8 @@ export const Constants = {
         "pos_procedimento",
         "perdido",
       ],
+      foto_angulo: ["frontal", "perfil_direito", "perfil_esquerdo", "outro"],
+      foto_categoria: ["antes", "depois", "evolucao"],
       message_direction: ["inbound", "outbound"],
       message_type: ["text", "image", "audio", "video", "document"],
       oportunidade_status: ["aberta", "ganha", "perdida"],
