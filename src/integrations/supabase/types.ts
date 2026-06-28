@@ -14,6 +14,39 @@ export type Database = {
   }
   public: {
     Tables: {
+      agenda_bloqueios: {
+        Row: {
+          created_at: string
+          data: string
+          dia_inteiro: boolean
+          fim: string | null
+          id: string
+          inicio: string | null
+          motivo: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          data: string
+          dia_inteiro?: boolean
+          fim?: string | null
+          id?: string
+          inicio?: string | null
+          motivo?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          data?: string
+          dia_inteiro?: boolean
+          fim?: string | null
+          id?: string
+          inicio?: string | null
+          motivo?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       agendamentos: {
         Row: {
           aguardando_confirmacao: boolean
