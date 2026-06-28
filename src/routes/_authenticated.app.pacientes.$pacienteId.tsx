@@ -28,6 +28,7 @@ import { FotosTab } from "@/components/pacientes/FotosTab";
 import { StatusBadge } from "@/components/brand/StatusBadge";
 import { STATUS_LABEL, STATUS_VARIANT } from "@/lib/agenda";
 import { toast } from "sonner";
+import { AgendarMensagemSheet } from "@/components/automacoes/AgendarMensagemSheet";
 
 export const Route = createFileRoute("/_authenticated/app/pacientes/$pacienteId")({
   component: PacienteDetalhePage,
