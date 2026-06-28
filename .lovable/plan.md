@@ -1,39 +1,83 @@
 ## Objetivo
 
-Renderizar previews de imagens HEIC/HEIF (iPhone) dentro da conversa convertendo-as para JPEG no navegador, sem alterar o arquivo original no Storage — o download e o envio ao WhatsApp continuam usando o HEIC original.
+Construir a aba **Agenda** mobile-first: navegação Hoje/Dia/Semana, criação rápida via bottom sheet, detalhe com ações de status, e badge "X a confirmar hoje" na navegação.
 
-## Abordagem
+## Estado atual
 
-Usar a biblioteca `heic2any` (pura JS/WASM, ~200KB, roda no browser) carregada via **import dinâmico** apenas quando um HEIC for detectado. Isso evita pesar o bundle inicial.
-
-A conversão acontece dentro do `ImageMessage`: ao detectar extensão `.heic`/`.heif` (ou `onError` da `<img>` por MIME desconhecido), buscamos o blob via `fetch(src)`, convertemos para JPEG e usamos um `URL.createObjectURL` como `src` do preview e do lightbox. O botão de download continua apontando para a URL assinada original.
+- `_authenticated.app.agenda.tsx` é um EmptyState placeholder.
+- Tabelas prontas: `agendamentos` (paciente_id, procedimento_id, tipo enum `avaliacao|procedimento|retorno`, data_hora, duracao_minutos default 60, status enum `agendado|confirmado|realizado|faltou|cancelado`, valor, profissional, observacoes, aguardando_confirmacao), `procedimentos` (nome, duracao_minutos, valor_padrao), `pacientes` (nome, foto_url, telefone, whatsapp).
+- RLS já permissiva (`agendamentos_all_auth`, `pacientes_all_auth`, `procedimentos_select_auth`).
+- Componentes brand prontos: `SegmentedControl`, `BottomSheet` (Drawer), `Fab`, `StatusBadge`, `BrandAvatar`, `AppHeader`.
+- `BottomNav` já aceita `badge` por item — ver Mudança 6.
 
 ## Mudanças
 
-### 1. `package.json`
-- Adicionar `heic2any` via `bun add heic2any`.
+### 1. `src/lib/agenda.ts` (novo) — helpers de domínio
 
-### 2. `src/lib/heicConvert.ts` (novo)
-- `isHeic(name: string): boolean` — checa extensões `heic`/`heif`.
-- `convertHeicToJpegUrl(src: string): Promise<string>` — fetch → blob → `heic2any({ blob, toType: "image/jpeg", quality: 0.85 })` → `URL.createObjectURL`. Import dinâmico de `heic2any` para code-splitting.
-- Cache em `Map<string, Promise<string>>` para não reconverter a mesma URL entre re-renders/lightbox.
+- Tipos `AgendamentoStatus`, `AgendamentoTipo` reaproveitando o enum gerado em `integrations/supabase/types.ts`.
+- `statusMeta(status)` → `{ label, variant: StatusBadge["variant"] }` (agendado=neutral, confirmado=info, realizado=success, faltou=warning, cancelado=danger).
+- `tipoLabel(tipo)`.
+- `startOfDay/endOfDay/startOfWeek(date)` (semana segunda-domingo), `addDays`, `fmtHora` (HH:mm pt-BR), `fmtDia` (qua, 02), `fmtDataLonga`.
 
-### 3. `src/components/conversa/MediaBubble.tsx`
-- No `ImageMessage`:
-  - Estado `previewUrl: string | null` (URL convertida) e `converting: boolean`.
-  - Se `isHeic(name)` ou `<img onError>`: disparar `convertHeicToJpegUrl(src)`; enquanto carrega, mostrar skeleton/placeholder com nome do arquivo; em sucesso, usar `previewUrl` no `<img>` do thumb e do lightbox.
-  - Se a conversão falhar, manter o fallback atual (renderiza `DocumentMessage`).
-  - `downloadMedia` segue chamado com `src` original (HEIC preservado).
-  - `URL.revokeObjectURL` no unmount via `useEffect` cleanup.
+### 2. `src/hooks/useAgenda.ts` (novo) — fetch + realtime
 
-### 4. Sem mudanças em
-- `chatMedia.ts` (upload original permanece HEIC).
-- Edge function `zapi-send` (Z-API recebe o HEIC original; o WhatsApp do destinatário lida nativamente).
-- Schema / RLS / Storage bucket.
+- `useAgendamentosRange(from: Date, to: Date)` → TanStack Query key `["agendamentos", iso(from), iso(to)]`. SELECT com join: `*, paciente:pacientes!agendamentos_paciente_id_fkey(id,nome,foto_url,whatsapp,telefone), procedimento:procedimentos(id,nome,duracao_minutos,valor_padrao)` filtrado por `data_hora gte/lte`, ordenado por `data_hora`.
+- `useAConfirmarHojeCount()` → count `agendamentos` com `status='agendado'` e data no dia atual (para o badge).
+- Subscription supabase `postgres_changes` em `agendamentos` invalida `["agendamentos"]` e `["agendamentos","confirmar-hoje"]` (espelha o padrão de `useUnreadCount`).
+- `useProcedimentos()`, `usePacientesSearch(term)` (top 20 por `ilike nome`).
+- Mutations: `useCreateAgendamento`, `useUpdateAgendamentoStatus(id, novoStatus)`, `useUpsertAgendamento` (cobre edição).
+
+### 3. `src/components/agenda/DayStrip.tsx` (novo)
+
+Faixa horizontal rolável (overflow-x-auto, `snap-x snap-mandatory`, scrollbar oculta). Recebe `selected: Date`, `onChange`, gera ±14 dias ao redor de hoje. Cada item: pill 56×72 com dia da semana abreviado, número grande, ponto indicador quando há agendamentos (`countsByIso` opcional). `aria-pressed` no selecionado.
+
+### 4. `src/components/agenda/AgendamentoCard.tsx` (novo)
+
+Card de lista: linha 1 horário grande (HH:mm) e duração ("60 min"); linha 2 `BrandAvatar` + nome paciente; linha 3 procedimento + `StatusBadge`. Touch alvo ≥ 56px. `onClick` abre detalhe.
+
+### 5. `src/components/agenda/AgendamentoSheet.tsx` (novo) — criar/editar
+
+`BottomSheet` controlado. Steps lineares (sem wizard pesado, apenas blocos verticais com scroll):
+
+1. **Paciente**: input com `ilike` (debounce 200ms) → lista de matches; botão "+ Novo paciente rápido" abre sub-formulário (nome obrigatório, telefone opcional) que faz `insert` em `pacientes` e seleciona.
+2. **Tipo**: SegmentedControl `Avaliação | Procedimento | Retorno`.
+3. **Procedimento** (Select shadcn) — quando muda, preenche `duracao_minutos` e `valor` (sobrescrevíveis).
+4. **Data** (Calendar shadcn com `pointer-events-auto`) e **Hora** (input `type="time"` step 300).
+5. **Profissional** (input texto, default "Dra. Mabyan" via `settings` se existir, senão livre).
+6. **Observações** (Textarea).
+
+Botão sticky no rodapé: "Salvar". Em edição, mesmo sheet com `defaultValues` e título "Editar agendamento".
+
+### 6. `src/components/agenda/AgendamentoDetailSheet.tsx` (novo)
+
+Mostra dados + grid 2×2 de ações: **Confirmar** (status→confirmado), **Realizado** (status→realizado), **Faltou** (status→faltou), **Cancelar** (status→cancelado, com confirm). Botão largo "Abrir conversa no WhatsApp" → procura `conversations` por `paciente_id` do agendamento; se existir navega para `/app/conversas/$id`, senão `insert` em `conversations` (telefone do paciente, status `em_atendimento`) e navega. Botão secundário "Editar" reabre o `AgendamentoSheet`.
+
+Ao marcar **Realizado**, registra no histórico via `audit_logs` (`entity='agendamento'`, `entity_id`, `action='realizado'`, `metadata={paciente_id, procedimento_id, valor}`). O histórico do paciente já consome `audit_logs` no futuro — este insert é a fonte.
+
+### 7. `src/routes/_authenticated.app.agenda.tsx` (reescrever)
+
+Layout vertical:
+- Header sticky logo abaixo do `AppHeader` global: linha 1 com `SegmentedControl` Dia/Semana à esquerda + chip "Hoje" à direita (volta a hoje, vira oculto quando `selected===hoje`). Linha 2 com `DayStrip`.
+- Conteúdo:
+  - Modo **Dia**: lista vertical agrupada por hora. Headers de hora discretos a cada slot ocupado. Cartões `AgendamentoCard`. Vazio → `EmptyState` "Nenhum agendamento neste dia".
+  - Modo **Semana**: 7 colunas roláveis horizontalmente (snap), cada coluna com mini-lista. Em telas estreitas, cada coluna ocupa ~85vw para manter legibilidade com uma mão. Header sticky com dia/data por coluna.
+- `Fab` fixo no canto inferior direito acima do `BottomNav` (`bottom-24 right-4`) com `Plus` + texto "Agendar" (largura automática), abre `AgendamentoSheet` em modo criação.
+
+### 8. `src/components/brand/BottomNav.tsx`
+
+Acrescentar consumo de `useAConfirmarHojeCount()` (do hook novo) e passar `badge` no item `/app/agenda`. Reusar o estilo de badge já presente (mesmo visual que `unread`). O hook tem realtime, então o número atualiza sozinho.
+
+## Critérios de aceite mapeados
+
+- Criar/editar/confirmar/concluir: Mudanças 5, 6.
+- Dia e semana: Mudança 7.
+- Fluidez com uma mão: `Fab` ao alcance do polegar, `BottomSheet`, alvos ≥ 56px, `DayStrip` snap, segmented Dia/Semana.
+- Badge "X a confirmar hoje": Mudança 8.
 
 ## Detalhes técnicos
 
-- `heic2any` é client-only; nunca importar no topo de arquivos compartilhados com SSR — apenas dentro da função `convertHeicToJpegUrl` com `await import("heic2any")`.
-- Limite prático: `heic2any` pode levar 1–3s e usar memória significativa em imagens grandes. Mostrar estado "Convertendo…" no card.
-- O cache é por URL assinada; como ela é estável durante 7 dias, evita retrabalho ao reabrir o lightbox ou rolar a lista.
-- O `onError` da `<img>` ainda cobre HEIC servido com MIME genérico (`application/octet-stream`) ou outros formatos não suportados que não tenham extensão reconhecida.
+- Datas em timezone do navegador; armazenadas como `timestamptz`. Para "hoje" usa `startOfDay`/`endOfDay` locais.
+- Realtime: um canal único em `useAgendamentosRange` (ou um provider global) para evitar múltiplas subscrições; segue o padrão de `useUnreadCount`.
+- Sem mudanças de schema, RLS ou edge functions.
+- Sem mudanças em rotas (já existe `/app/agenda`).
+- Sem mudanças no fluxo Z-API; a ação "Abrir conversa" apenas garante a linha em `conversations` e navega.
