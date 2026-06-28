@@ -65,9 +65,15 @@ function HomePage() {
   const navigate = useNavigate();
   const isAdmin = useIsAdmin();
   const [quickOpen, setQuickOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   const name = useGreetingName();
   const today = useToday();
+  const followups = useFollowupsAtrasadosCount();
+  const aConfirmar = useAConfirmarHojeCount();
+  const unread = useUnreadCount();
+  const leadsNovos = useLeadsNovosCount();
 
   return (
     <>
