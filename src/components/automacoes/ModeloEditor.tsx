@@ -3,7 +3,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
-import { Chip } from "@/components/brand/Chip";
 import {
   VARIAVEIS_MENSAGEM,
   MOCK_VARS,
