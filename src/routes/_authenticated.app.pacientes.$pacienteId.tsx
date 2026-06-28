@@ -226,6 +226,15 @@ function ResumoTab({ pacienteId }: { pacienteId: string }) {
           })}
         </ul>
       )}
+      <AgendarMensagemSheet
+        open={agendarMsgOpen}
+        onOpenChange={setAgendarMsgOpen}
+        pacienteId={pacienteId}
+        defaultVars={{
+          nome: paciente?.nome,
+          primeiro_nome: (paciente?.nome ?? "").split(" ")[0],
+        }}
+      />
     </div>
   );
 }
