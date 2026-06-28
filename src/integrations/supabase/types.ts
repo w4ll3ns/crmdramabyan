@@ -590,6 +590,7 @@ export type Database = {
           endereco: string | null
           foto_url: string | null
           id: string
+          lead_ad_ref: Json | null
           nome: string
           observacoes: string | null
           origem: Database["public"]["Enums"]["origem_type"] | null
@@ -597,6 +598,7 @@ export type Database = {
           tags: string[]
           telefone: string | null
           updated_at: string
+          wa_lid: string | null
           whatsapp: string | null
         }
         Insert: {
@@ -610,6 +612,7 @@ export type Database = {
           endereco?: string | null
           foto_url?: string | null
           id?: string
+          lead_ad_ref?: Json | null
           nome: string
           observacoes?: string | null
           origem?: Database["public"]["Enums"]["origem_type"] | null
@@ -617,6 +620,7 @@ export type Database = {
           tags?: string[]
           telefone?: string | null
           updated_at?: string
+          wa_lid?: string | null
           whatsapp?: string | null
         }
         Update: {
@@ -630,6 +634,7 @@ export type Database = {
           endereco?: string | null
           foto_url?: string | null
           id?: string
+          lead_ad_ref?: Json | null
           nome?: string
           observacoes?: string | null
           origem?: Database["public"]["Enums"]["origem_type"] | null
@@ -637,6 +642,7 @@ export type Database = {
           tags?: string[]
           telefone?: string | null
           updated_at?: string
+          wa_lid?: string | null
           whatsapp?: string | null
         }
         Relationships: []
