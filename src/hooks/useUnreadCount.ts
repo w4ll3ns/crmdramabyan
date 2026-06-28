@@ -19,7 +19,7 @@ export function useUnreadCount() {
 
   useEffect(() => {
     const channel = supabase
-      .channel("conversas-unread")
+      .channel(`conversas-unread-${Math.random().toString(36).slice(2)}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "conversations" },
