@@ -5,7 +5,7 @@ import { SectionHeader } from "@/components/brand/SectionHeader";
 import { ListRow } from "@/components/brand/ListRow";
 import { StatusBadge } from "@/components/brand/StatusBadge";
 import { Fab } from "@/components/brand/Fab";
-import { Calendar, MessageCircle, Sparkles, Plus, Zap, Smartphone } from "lucide-react";
+import { Calendar, MessageCircle, Sparkles, Plus, Settings, ChevronRight } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/_authenticated/app/")({
@@ -25,12 +25,21 @@ function HomePage() {
 
   return (
     <>
-      <section className="px-5 pt-6 pb-2">
-        <p className="text-caption text-muted-foreground">Bom dia,</p>
-        <h1 className="text-display text-foreground mt-1">{name}</h1>
-        <p className="text-caption text-muted-foreground mt-2 max-w-xs">
-          Tudo pronto para o seu dia. Aqui está um resumo.
-        </p>
+      <section className="px-5 pt-6 pb-2 flex items-start justify-between gap-3">
+        <div>
+          <p className="text-caption text-muted-foreground">Bom dia,</p>
+          <h1 className="text-display text-foreground mt-1">{name}</h1>
+          <p className="text-caption text-muted-foreground mt-2 max-w-xs">
+            Tudo pronto para o seu dia. Aqui está um resumo.
+          </p>
+        </div>
+        <Link
+          to="/app/configuracoes"
+          aria-label="Configurações"
+          className="h-10 w-10 rounded-full bg-card shadow-soft flex items-center justify-center text-foreground shrink-0"
+        >
+          <Settings className="h-5 w-5" strokeWidth={1.5} />
+        </Link>
       </section>
 
       <section className="px-5 pt-3 grid grid-cols-2 gap-3">
@@ -76,34 +85,21 @@ function HomePage() {
       </div>
 
       <SectionHeader title="Configurações" />
-      <div className="px-5 grid gap-2">
+      <div className="px-5">
         <Link
-          to="/app/configuracoes/automacoes"
+          to="/app/configuracoes"
           className="rounded-2xl bg-card shadow-soft p-4 flex items-center gap-3"
         >
           <span className="h-10 w-10 rounded-full bg-primary/15 text-primary flex items-center justify-center">
-            <Zap className="h-5 w-5" strokeWidth={1.5} />
+            <Settings className="h-5 w-5" strokeWidth={1.5} />
           </span>
           <div className="flex-1">
-            <div className="text-label">Automações</div>
+            <div className="text-label">Abrir configurações</div>
             <p className="text-caption text-muted-foreground">
-              Modelos, janela de envio e pausa global.
+              Automações, WhatsApp e mais.
             </p>
           </div>
-        </Link>
-        <Link
-          to="/app/configuracoes/zapi"
-          className="rounded-2xl bg-card shadow-soft p-4 flex items-center gap-3"
-        >
-          <span className="h-10 w-10 rounded-full bg-primary/15 text-primary flex items-center justify-center">
-            <Smartphone className="h-5 w-5" strokeWidth={1.5} />
-          </span>
-          <div className="flex-1">
-            <div className="text-label">WhatsApp (Z-API)</div>
-            <p className="text-caption text-muted-foreground">
-              Conexão e webhooks.
-            </p>
-          </div>
+          <ChevronRight className="h-4 w-4 text-muted-foreground" />
         </Link>
       </div>
 
