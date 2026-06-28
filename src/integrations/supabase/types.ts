@@ -17,6 +17,8 @@ export type Database = {
       agendamentos: {
         Row: {
           aguardando_confirmacao: boolean
+          confirmacao_respondida_em: string | null
+          confirmacao_resposta: string | null
           created_at: string
           data_hora: string
           duracao_minutos: number
@@ -33,6 +35,8 @@ export type Database = {
         }
         Insert: {
           aguardando_confirmacao?: boolean
+          confirmacao_respondida_em?: string | null
+          confirmacao_resposta?: string | null
           created_at?: string
           data_hora: string
           duracao_minutos?: number
@@ -49,6 +53,8 @@ export type Database = {
         }
         Update: {
           aguardando_confirmacao?: boolean
+          confirmacao_respondida_em?: string | null
+          confirmacao_resposta?: string | null
           created_at?: string
           data_hora?: string
           duracao_minutos?: number
@@ -180,6 +186,44 @@ export type Database = {
           user_id?: string | null
         }
         Relationships: []
+      }
+      automacao_eventos: {
+        Row: {
+          created_at: string
+          id: string
+          ocorreu_em: string
+          paciente_id: string
+          payload: Json
+          ref_id: string | null
+          tipo: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          ocorreu_em?: string
+          paciente_id: string
+          payload?: Json
+          ref_id?: string | null
+          tipo: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          ocorreu_em?: string
+          paciente_id?: string
+          payload?: Json
+          ref_id?: string | null
+          tipo?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "automacao_eventos_paciente_id_fkey"
+            columns: ["paciente_id"]
+            isOneToOne: false
+            referencedRelation: "pacientes"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       conversations: {
         Row: {
@@ -864,6 +908,18 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      enfileirar_automacao: {
+        Args: {
+          _agendado_para: string
+          _agendamento_id?: string
+          _idemp_key?: string
+          _idemp_ref?: string
+          _paciente_id: string
+          _tipo: Database["public"]["Enums"]["modelo_tipo"]
+          _vars_extra?: Json
+        }
+        Returns: string
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -875,6 +931,8 @@ export type Database = {
         Args: { template: string; vars: Json }
         Returns: string
       }
+      run_regua_aniversario: { Args: never; Returns: number }
+      run_regua_reativacao: { Args: never; Returns: number }
     }
     Enums: {
       agendamento_status:

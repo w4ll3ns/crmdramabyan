@@ -1,9 +1,11 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { ChevronLeft } from "lucide-react";
 import { SegmentedControl } from "@/components/brand/SegmentedControl";
 import { ModeloEditor } from "@/components/automacoes/ModeloEditor";
 import { JanelaConfigForm } from "@/components/automacoes/JanelaConfigForm";
+import { ReguasTab } from "@/components/automacoes/ReguasTab";
+import { PainelMetricas } from "@/components/automacoes/PainelMetricas";
 import {
   useModelos,
   useUpdateModelo,
@@ -12,6 +14,8 @@ import {
 import { MODELO_TIPOS } from "@/lib/templates";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { toast } from "sonner";
+
+type Tab = "reguas" | "modelos" | "janela" | "metricas";
 
 export const Route = createFileRoute(
   "/_authenticated/app/configuracoes/automacoes",
@@ -22,11 +26,12 @@ export const Route = createFileRoute(
 function AutomacoesPage() {
   const navigate = useNavigate();
   const isAdmin = useIsAdmin();
-  const [tab, setTab] = useState<"janela" | "modelos">("janela");
+  const [tab, setTab] = useState<Tab>("reguas");
   const { data: modelos } = useModelos();
   const update = useUpdateModelo();
-  const [tipo, setTipo] = useState<string>("boas_vindas");
+  const [tipo, setTipo] = useState<string>("confirmacao");
   const [draft, setDraft] = useState<Modelo | null>(null);
+
 
   const selected = useMemo(
     () => modelos?.find((m) => m.tipo === tipo) ?? null,
@@ -61,18 +66,21 @@ function AutomacoesPage() {
       <div className="px-5">
         <SegmentedControl
           value={tab}
-          onChange={(v) => setTab(v as "janela" | "modelos")}
+          onChange={(v) => setTab(v as Tab)}
           options={[
-            { value: "janela", label: "Janela & limites" },
+            { value: "reguas", label: "Réguas" },
             { value: "modelos", label: "Modelos" },
+            { value: "janela", label: "Janela" },
+            { value: "metricas", label: "Métricas" },
           ]}
         />
       </div>
 
       <div className="px-5 mt-5">
-        {tab === "janela" ? (
-          <JanelaConfigForm />
-        ) : (
+        {tab === "reguas" ? <ReguasTab /> : null}
+        {tab === "janela" ? <JanelaConfigForm /> : null}
+        {tab === "metricas" ? <PainelMetricas /> : null}
+        {tab === "modelos" ? (
           <div className="flex flex-col gap-4">
             <div>
               <label className="text-caption text-muted-foreground">Tipo</label>
@@ -111,8 +119,9 @@ function AutomacoesPage() {
               </div>
             )}
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );
 }
+

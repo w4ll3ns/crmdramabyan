@@ -11,6 +11,7 @@ import { AgendamentoDetailSheet } from "@/components/agenda/AgendamentoDetailShe
 import {
   type AgendamentoFull,
   useAgendamentosRange,
+  useAConfirmarHojeCount,
 } from "@/hooks/useAgenda";
 import {
   addDays,
@@ -94,6 +95,8 @@ function AgendaPage() {
             </button>
           )}
         </div>
+        <ConfirmarHojePill />
+
         <div className="pt-3">
           <DayStrip
             selected={selected}
@@ -149,6 +152,19 @@ function AgendaPage() {
           setEditing(a);
         }}
       />
+    </div>
+  );
+}
+
+function ConfirmarHojePill() {
+  const n = useAConfirmarHojeCount();
+  if (!n) return null;
+  return (
+    <div className="mt-2 pb-2">
+      <span className="inline-flex items-center gap-2 text-caption px-3 py-1 rounded-full bg-warning/15 text-warning-foreground">
+        <span className="h-1.5 w-1.5 rounded-full bg-warning" />
+        {n} a confirmar hoje
+      </span>
     </div>
   );
 }
