@@ -385,6 +385,84 @@ Deno.serve(async (req) => {
       }
     }
 
+    // === Confirmação 2-vias ===
+    if (!fromMe && type === "text" && content_text && pacienteId) {
+      try {
+        const txt = content_text.toLowerCase().trim();
+        const isConfirm = /^(1|sim|confirmo|confirmado|ok)\b/.test(txt);
+        const isRemarcar = /^(2|n[ãa]o|remarcar|cancelar|nao)\b/.test(txt);
+        if (isConfirm || isRemarcar) {
+          // Procura agendamento futuro próximo aguardando confirmação
+          const limite = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
+          const { data: ag } = await sb
+            .from("agendamentos")
+            .select("id, data_hora")
+            .eq("paciente_id", pacienteId)
+            .eq("aguardando_confirmacao", true)
+            .gt("data_hora", new Date().toISOString())
+            .lt("data_hora", limite)
+            .order("data_hora", { ascending: true })
+            .limit(1)
+            .maybeSingle();
+
+          if (ag) {
+            const novoStatus = isConfirm ? "confirmado" : "cancelado";
+            const resposta = isConfirm ? "confirmado" : "remarcar";
+            await sb
+              .from("agendamentos")
+              .update({
+                status: novoStatus,
+                confirmacao_resposta: resposta,
+                confirmacao_respondida_em: new Date().toISOString(),
+                aguardando_confirmacao: false,
+              })
+              .eq("id", ag.id);
+
+            // Cancela mensagens automáticas pendentes desse agendamento
+            await sb
+              .from("mensagens_agendadas")
+              .update({ status: "cancelada", erro: "respondida" })
+              .eq("agendamento_id", ag.id)
+              .eq("status", "pendente")
+              .eq("origem", "automacao");
+
+            // Auto-resposta curta (manual, neutra)
+            const ack = isConfirm
+              ? "Obrigada pela confirmação! 💜 Te esperamos."
+              : "Recebi! Vou te chamar para remarcar. 💜";
+            await sb.from("mensagens_agendadas").insert({
+              paciente_id: pacienteId,
+              agendamento_id: ag.id,
+              tipo: "manual",
+              conteudo_renderizado: ack,
+              variaveis: {},
+              agendado_para: new Date(Date.now() + 5000).toISOString(),
+              origem: "automacao",
+            });
+
+            if (isRemarcar) {
+              const { data: p } = await sb
+                .from("pacientes")
+                .select("nome")
+                .eq("id", pacienteId)
+                .maybeSingle();
+              await sb.from("tasks").insert({
+                titulo: `Remarcar ${p?.nome ?? "paciente"}`,
+                descricao: "Paciente solicitou remarcação via WhatsApp.",
+                prioridade: "alta",
+                status: "pendente",
+                paciente_id: pacienteId,
+                agendamento_id: ag.id,
+              });
+            }
+          }
+        }
+      } catch (e) {
+        console.error("confirmacao 2-vias falhou", e);
+      }
+    }
+
+
     return new Response(JSON.stringify({ ok: true }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
