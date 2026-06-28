@@ -206,6 +206,7 @@ Deno.serve(async (req) => {
     const dMsgMax = clampInt(Number(getSetting<number>(rows, "zapi_delay_message_max", 4)), 1, 15);
     const maxHora = Number(getSetting<number>(rows, "zapi_max_destinatarios_hora", 15)) || 15;
     const maxDia  = Number(getSetting<number>(rows, "zapi_max_destinatarios_dia", 40)) || 40;
+    const maxTent = clampInt(Number(getSetting<number>(rows, "automacoes_max_tentativas", 3)), 1, 10);
 
     // 2) janela
     const { hhmm } = nowInTz(tz);
