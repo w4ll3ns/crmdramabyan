@@ -65,8 +65,7 @@ function ZapiConfig() {
     if (!polling) return;
     const t = setInterval(async () => {
       const { data } = await supabase.functions.invoke(
-        "zapi-instance-manager?action=status",
-        { method: "GET" } as any,
+        "zapi-instance-manager", { body: { action: "status" } },
       );
       if (data?.connected) {
         setPolling(false);
@@ -133,8 +132,7 @@ function ZapiConfig() {
   async function conectar() {
     setQr(null);
     const { data, error } = await supabase.functions.invoke(
-      "zapi-instance-manager?action=qr-code",
-      { method: "GET" } as any,
+      "zapi-instance-manager", { body: { action: "qr-code" } },
     );
     if (error) {
       toast.error("Falha ao gerar QR", { description: error.message });
@@ -156,8 +154,7 @@ function ZapiConfig() {
 
   async function desconectar() {
     const { error } = await supabase.functions.invoke(
-      "zapi-instance-manager?action=disconnect",
-      { method: "GET" } as any,
+      "zapi-instance-manager", { body: { action: "disconnect" } },
     );
     if (error) {
       toast.error("Erro ao desconectar", { description: error.message });
@@ -169,8 +166,7 @@ function ZapiConfig() {
 
   async function atualizarStatus() {
     const { error } = await supabase.functions.invoke(
-      "zapi-instance-manager?action=status",
-      { method: "GET" } as any,
+      "zapi-instance-manager", { body: { action: "status" } },
     );
     if (error) {
       toast.error("Erro", { description: error.message });
