@@ -253,10 +253,10 @@ Deno.serve(async (req) => {
             conversation_id: conversationId,
             direction: "outbound",
             type: "text",
-            content: conteudo,
-            status: "sent",
-            external_id: externalId,
-            metadata: { origem: m.origem, modelo_id: m.modelo_id, mensagem_agendada_id: m.id },
+            content_text: conteudo,
+            status: "enviado",
+            external_message_id: externalId,
+            sent_at: new Date().toISOString(),
           });
           await sb.from("conversations").update({ ultima_mensagem_em: new Date().toISOString() }).eq("id", conversationId);
         }
