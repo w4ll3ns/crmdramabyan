@@ -76,7 +76,7 @@ type Cfg = { enabled?: boolean; [k: string]: unknown };
 export function ReguasTab() {
   const { data: reguas, isLoading } = useReguas();
   const set = useSetRegua();
-  const pausado = (reguas?.regua_pausado as boolean | undefined) ?? false;
+  const pausado = (reguas?.automacoes_pausado as boolean | undefined) ?? false;
 
   if (isLoading) return <div className="text-muted-foreground">Carregando…</div>;
 
@@ -101,7 +101,7 @@ export function ReguasTab() {
             className="sr-only peer"
             checked={!!pausado}
             onChange={async (e) => {
-              await set.mutateAsync({ chave: "regua_pausado", valor: e.target.checked });
+              await set.mutateAsync({ chave: "automacoes_pausado", valor: e.target.checked });
               toast.success(e.target.checked ? "Automações pausadas" : "Automações ativas");
             }}
           />

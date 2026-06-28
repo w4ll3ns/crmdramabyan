@@ -5,6 +5,15 @@ export const Route = createFileRoute("/api/public/hooks/reguas-cron")({
   server: {
     handlers: {
       POST: async ({ request }) => {
+        const expected = process.env.CRON_SECRET;
+        const provided = request.headers.get("x-cron-secret");
+        if (!expected || provided !== expected) {
+          return new Response(JSON.stringify({ error: "unauthorized" }), {
+            status: 401,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+
         const url = new URL(request.url);
         const job = url.searchParams.get("job");
         if (job !== "aniversario" && job !== "reativacao") {

@@ -95,6 +95,15 @@ function getTzOffsetMinutes(tz: string, at: Date): number {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
+  const expectedCronSecret = Deno.env.get("CRON_SECRET");
+  const providedCronSecret = req.headers.get("x-cron-secret");
+  if (!expectedCronSecret || providedCronSecret !== expectedCronSecret) {
+    return new Response(JSON.stringify({ error: "unauthorized" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
   try {
     const sb = adminClient();
 
@@ -106,7 +115,7 @@ Deno.serve(async (req) => {
     const janelaFim = getSetting<string>(rows, "automacoes_janela_fim", "20:00");
     const tz = getSetting<string>(rows, "automacoes_fuso", "America/Fortaleza");
     const limiteMin = getSetting<number>(rows, "automacoes_limite_minuto", 8);
-    const nomeClinica = getSetting<string>(rows, "nome_clinica", "Clínica");
+    const nomeClinica = getSetting<string>(rows, "clinica_nome", "Clínica");
 
     if (pausado) {
       return new Response(JSON.stringify({ ok: true, skipped: "pausado" }), {
