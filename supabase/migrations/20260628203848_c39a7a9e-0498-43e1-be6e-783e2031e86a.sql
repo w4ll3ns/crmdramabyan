@@ -224,7 +224,7 @@ SELECT cron.schedule(
   $$
   SELECT net.http_post(
     url := 'https://ehbgrqqleluhyzwwhbol.supabase.co/functions/v1/processar-mensagens-agendadas',
-    headers := '{"Content-Type":"application/json","apikey":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVoYmdycXFsZWx1aHl6d3doYm9sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI2NDgwNjcsImV4cCI6MjA5ODIyNDA2N30.Lhw17bNm_-lqi19xUxvswlU3HL84n7hQezvWEyYzfYc","x-cron-secret":"55c65dc8fe56c2abc29f87c2e841b742ca807087c040e32b0bfcbf393abe0ccc"}'::jsonb,
+    headers := '{"Content-Type":"application/json","apikey":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVoYmdycXFsZWx1aHl6d3doYm9sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI2NDgwNjcsImV4cCI6MjA5ODIyNDA2N30.Lhw17bNm_-lqi19xUxvswlU3HL84n7hQezvWEyYzfYc","x-cron-secret":"__REDACTED_ROTATED_VIA_VAULT__"}'::jsonb,
     body := '{}'::jsonb
   ) AS request_id;
   $$
@@ -236,7 +236,7 @@ SELECT cron.schedule(
   $$
   SELECT net.http_post(
     url := 'https://project--ad354cb1-87ea-4a9c-8eed-f91574a39190.lovable.app/api/public/hooks/reguas-cron?job=aniversario',
-    headers := '{"Content-Type":"application/json","x-cron-secret":"55c65dc8fe56c2abc29f87c2e841b742ca807087c040e32b0bfcbf393abe0ccc"}'::jsonb,
+    headers := '{"Content-Type":"application/json","x-cron-secret":"__REDACTED_ROTATED_VIA_VAULT__"}'::jsonb,
     body := '{}'::jsonb
   );
   $$
@@ -248,7 +248,7 @@ SELECT cron.schedule(
   $$
   SELECT net.http_post(
     url := 'https://project--ad354cb1-87ea-4a9c-8eed-f91574a39190.lovable.app/api/public/hooks/reguas-cron?job=reativacao',
-    headers := '{"Content-Type":"application/json","x-cron-secret":"55c65dc8fe56c2abc29f87c2e841b742ca807087c040e32b0bfcbf393abe0ccc"}'::jsonb,
+    headers := '{"Content-Type":"application/json","x-cron-secret":"__REDACTED_ROTATED_VIA_VAULT__"}'::jsonb,
     body := '{}'::jsonb
   );
   $$
