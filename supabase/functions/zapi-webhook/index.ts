@@ -93,12 +93,17 @@ Deno.serve(async (req) => {
       });
     }
 
+    const isReceivedMessageEvent = /ReceivedCallback/i.test(eventType);
+
     // === Delivery / status de mensagens (SENT|RECEIVED|READ|PLAYED) ===
+    // Importante: ReceivedCallback também vem com body.status = "RECEIVED".
+    // Se cair aqui, a mensagem recebida é confundida com status e nunca é inserida.
     if (
-      /MessageStatus|DeliveryCallback|delivery|read|DELIVERED|READ|SENT|PLAYED|RECEIVED/i.test(
+      !isReceivedMessageEvent &&
+      (/MessageStatus|DeliveryCallback|delivery|read|DELIVERED|READ|SENT|PLAYED/i.test(
         eventType,
       ) ||
-      body.status
+        body.messageStatus)
     ) {
       const ids: string[] = Array.isArray(body.ids)
         ? body.ids
@@ -123,6 +128,18 @@ Deno.serve(async (req) => {
 
     // === Mensagem recebida (ReceivedCallback) ===
     // Ignora grupos/canais por enquanto (não casamos com paciente).
+    if (!isReceivedMessageEvent) {
+      await sb.from("webhook_events").insert({
+        source: "z-api",
+        event_type: "ignored_unsupported_event",
+        payload: { eventType, original: body },
+      });
+      return new Response(
+        JSON.stringify({ ok: true, ignored: "unsupported_event", eventType }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     if (body.isGroup || body.isNewsletter) {
       return new Response(
         JSON.stringify({ ok: true, ignored: "group_or_newsletter" }),
@@ -135,6 +152,11 @@ Deno.serve(async (req) => {
       body.phone || body.from || body.sender || body.participantPhone || "";
     const telefone = normalizePhone(phoneRaw);
     if (!telefone) {
+      await sb.from("webhook_events").insert({
+        source: "z-api",
+        event_type: "ignored_no_phone",
+        payload: body,
+      });
       return new Response(JSON.stringify({ ok: true, ignored: "noPhone" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
