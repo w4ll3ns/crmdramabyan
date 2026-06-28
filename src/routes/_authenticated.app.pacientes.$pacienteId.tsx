@@ -12,6 +12,7 @@ import {
   ShieldOff,
   Camera as CameraIcon,
   CameraOff,
+  Clock,
 } from "lucide-react";
 import { BrandAvatar } from "@/components/brand/Avatar";
 import { SegmentedControl } from "@/components/brand/SegmentedControl";
