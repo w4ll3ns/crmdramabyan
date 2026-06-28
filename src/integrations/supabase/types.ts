@@ -942,6 +942,16 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      diag_cron_jobs: {
+        Args: never
+        Returns: {
+          active: boolean
+          jobname: string
+          last_start: string
+          last_status: string
+          schedule: string
+        }[]
+      }
       enfileirar_automacao: {
         Args: {
           _agendado_para: string
