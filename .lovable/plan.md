@@ -1,21 +1,33 @@
 ## Diagnóstico
 
-Os webhooks da Z-API estão chegando ao backend: há eventos `ReceivedCallback` recentes no log. Porém, eles não viram conversas/mensagens porque o webhook atual verifica `body.status` antes de identificar mensagem recebida. Como o payload recebido vem com `status: "RECEIVED"`, ele entra no bloco de atualização de status e retorna antes de inserir a mensagem.
+Na URL `/app/conversas/245881aa-...` o app continua exibindo a **lista de conversas** em vez da tela da conversa. Por isso não há campo de mensagem para responder.
 
-## Plano de correção
+**Causa raiz (routing TanStack):**
+- `src/routes/_authenticated.app.conversas.tsx` é uma rota-folha que renderiza `<ConversasPage />` (a lista) e **não** renderiza `<Outlet />`.
+- Existe a rota filha `src/routes/_authenticated.app.conversas.$conversaId.tsx`.
+- Quando a URL casa com a filha, o pai continua sendo renderizado, mas como não tem `<Outlet />`, a filha nunca monta — o usuário vê a lista no lugar da conversa.
 
-1. **Corrigir a ordem de interpretação do webhook**
-   - Em `zapi-webhook`, identificar primeiro eventos de mensagem recebida (`ReceivedCallback`) e só depois tratar eventos de status/entrega.
-   - Restringir o bloco de status para callbacks reais de status/entrega, evitando que `ReceivedCallback` seja confundido com confirmação de entrega.
+A rota detalhe em si está correta (busca a conversa e as mensagens com sucesso — confirmado nos network logs: 1 conversa + 1 mensagem "Oi" retornaram 200).
 
-2. **Manter os filtros existentes**
-   - Continuar ignorando grupos/newsletters.
-   - Continuar deduplicando por `messageId`.
-   - Continuar criando/atualizando paciente, conversa e mensagem como já implementado.
+## Correção
 
-3. **Melhorar rastreabilidade em caso de payload inesperado**
-   - Registrar no `webhook_events` quando um evento recebido for ignorado por falta de telefone ou tipo não suportado, sem quebrar o webhook.
+Promover `conversas` de folha para um arranjo "layout + index":
 
-4. **Validar com os dados reais já recebidos**
-   - Conferir que novos `ReceivedCallback` passam a gerar linhas em `messages` e `conversations`.
-   - Não vou retroprocessar automaticamente os 2 eventos antigos para evitar duplicações; se quiser, posso fazer isso depois como ação separada.
+1. **Renomear** `src/routes/_authenticated.app.conversas.tsx` → `src/routes/_authenticated.app.conversas.index.tsx`
+   - Atualizar `createFileRoute("/_authenticated/app/conversas")` → `createFileRoute("/_authenticated/app/conversas/")` (id do index).
+   - Nenhuma outra mudança no componente da lista.
+
+2. **Não criar** um novo arquivo `conversas.tsx` de layout. Sem layout pai, cada rota (`/app/conversas` e `/app/conversas/$conversaId`) renderiza independentemente — exatamente o que queremos, já que a tela de detalhe ocupa `h-dvh` com header próprio.
+
+3. **Regenerar o route tree** automaticamente via dev server (sem editar `routeTree.gen.ts`).
+
+## Validação
+
+- Abrir `/app/conversas` → lista carrega normalmente.
+- Tocar em "Wallen Santiago" → navega para `/app/conversas/245881aa-...` e a tela da conversa aparece com:
+  - header com avatar, nome e botão voltar
+  - balão "Oi" recebido
+  - campo de texto + botão enviar
+- Digitar e enviar mensagem → invoca `zapi-send`, mensagem aparece como outbound, e webhook de status atualiza o ícone de entrega.
+
+Sem mudanças de UI, backend ou edge functions — apenas o rename de arquivo de rota.
