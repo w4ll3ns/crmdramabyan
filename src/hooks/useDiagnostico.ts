@@ -120,7 +120,7 @@ export function useDiagnostico() {
         supabase
           .from("mensagens_agendadas")
           .select("id", { count: "exact", head: true })
-          .eq("status", "falha")
+          .eq("status", "falhou")
           .gte("updated_at", ago24h),
         supabase
           .from("mensagens_agendadas")

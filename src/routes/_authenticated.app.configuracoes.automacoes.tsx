@@ -6,6 +6,7 @@ import { ModeloEditor } from "@/components/automacoes/ModeloEditor";
 import { JanelaConfigForm } from "@/components/automacoes/JanelaConfigForm";
 import { ReguasTab } from "@/components/automacoes/ReguasTab";
 import { PainelMetricas } from "@/components/automacoes/PainelMetricas";
+import { DiagnosticoTab } from "@/components/automacoes/DiagnosticoTab";
 import {
   useModelos,
   useUpdateModelo,
@@ -18,7 +19,7 @@ import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
 
-type Tab = "reguas" | "modelos" | "janela" | "metricas";
+type Tab = "reguas" | "modelos" | "janela" | "metricas" | "diagnostico";
 
 export const Route = createFileRoute(
   "/_authenticated/app/configuracoes/automacoes",
@@ -121,6 +122,7 @@ function AutomacoesPage() {
             { value: "modelos", label: "Modelos" },
             { value: "janela", label: "Janela" },
             { value: "metricas", label: "Métricas" },
+            { value: "diagnostico", label: "Diagnóstico" },
           ]}
         />
       </div>
@@ -129,6 +131,7 @@ function AutomacoesPage() {
         {tab === "reguas" ? <ReguasTab /> : null}
         {tab === "janela" ? <JanelaConfigForm /> : null}
         {tab === "metricas" ? <PainelMetricas /> : null}
+        {tab === "diagnostico" ? <DiagnosticoTab /> : null}
         {tab === "modelos" ? (
           <div className="flex flex-col gap-4">
             <div>
