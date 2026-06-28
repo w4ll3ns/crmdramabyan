@@ -95,6 +95,8 @@ function AgendaPage() {
             </button>
           )}
         </div>
+        <ConfirmarHojePill />
+
         <div className="pt-3">
           <DayStrip
             selected={selected}
