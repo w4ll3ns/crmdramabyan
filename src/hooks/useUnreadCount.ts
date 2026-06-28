@@ -18,8 +18,8 @@ export function useUnreadCount() {
   });
 
   useEffect(() => {
-    const channel = supabase
-      .channel("conversas-unread")
+    const conversationsChannel = supabase
+      .channel(`conversas-unread-conversations-${Math.random().toString(36).slice(2)}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "conversations" },
@@ -27,6 +27,10 @@ export function useUnreadCount() {
           qc.invalidateQueries({ queryKey: ["conversas"] });
         },
       )
+      .subscribe();
+
+    const messagesChannel = supabase
+      .channel(`conversas-unread-messages-${Math.random().toString(36).slice(2)}`)
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "messages" },
@@ -35,8 +39,10 @@ export function useUnreadCount() {
         },
       )
       .subscribe();
+
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(conversationsChannel);
+      supabase.removeChannel(messagesChannel);
     };
   }, [qc]);
 
