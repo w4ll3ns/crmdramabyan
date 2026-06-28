@@ -1,111 +1,83 @@
+# Schema completo Dra. Mabyan CRM no Lovable Cloud
 
-# Dra. Mabyan — CRM · Fundação visual + Shell + Login + PWA
+Criação de schema completo com enums, tabelas, RLS, triggers e seed do catálogo, em uma única migration.
 
-Esta etapa entrega a base: design system completo via tokens, AppShell mobile com BottomNav, tela de Login com Supabase, página /style com todos os componentes, e PWA instalável. Telas internas (Conversas, Agenda, Funil, Pacientes, Início) ficam como placeholders prontos para a próxima etapa.
+## 1. Enums (CREATE TYPE)
 
-> Observação sobre a stack: o projeto roda em **TanStack Start (React 19 + Vite 7 + Tailwind v4)**, não em Vite/React Router puro. A identidade, os tokens e os componentes são exatamente os pedidos; só muda o roteamento (file-based em `src/routes/`) e a forma de declarar tokens (Tailwind v4 CSS-first em `src/styles.css`, sem `tailwind.config.js`). O resultado visual é idêntico.
+- `app_role`: admin, atendente
+- `origem_type`: instagram, indicacao, google, tiktok, site, anuncio_meta, whatsapp, passou_em_frente, outro
+- `etapa_funil`: novo_lead, primeiro_contato, avaliacao_agendada, avaliacao_realizada, orcamento_enviado, negociacao, procedimento_agendado, cliente, pos_procedimento, perdido
+- `oportunidade_status`: aberta, ganha, perdida
+- `conversation_status`: nao_lida, em_atendimento, aguardando, resolvida, arquivada
+- `message_direction`: inbound, outbound
+- `message_type`: text, image, audio, video, document
+- `agendamento_tipo`: avaliacao, procedimento, retorno
+- `agendamento_status`: agendado, confirmado, realizado, faltou, cancelado
+- `task_status`: pendente, em_andamento, concluida, cancelada
+- `task_priority`: baixa, media, alta, urgente
+- `temperatura_type`: quente, morno, frio (em vez de CHECK, para consistência)
 
-## 1. Design System (tokens)
+## 2. Helpers de segurança
 
-Reescrever `src/styles.css` com a identidade champanhe/dourado:
+- `public.update_updated_at_column()` — trigger genérico de `updated_at`.
+- `public.has_role(_user_id uuid, _role app_role) returns boolean` — SECURITY DEFINER, `search_path=public`, lê de `user_roles`. Usado em todas as policies de admin (evita recursão).
+- `public.handle_new_user()` — trigger AFTER INSERT em `auth.users` que cria linha em `public.profiles` (id, email, name a partir de `raw_user_meta_data`).
 
-- **Cores claras** (em `:root`, em `oklch` equivalente aos hex pedidos):
-  `--background #FAF7F4`, `--card/popover #FFFFFF`, `--foreground #2B2522`,
-  `--muted-foreground #8A7F77`, `--border #ECE5DE`, `--input #F4EEE8`,
-  `--primary #C9A66B`, `--primary-hover #B98E5E`, `--primary-foreground #FFFFFF`,
-  `--accent #D9A7A0`, `--success #6FA287`, `--warning #D8A24A`,
-  `--danger #C76B5E`, `--ring` derivado do dourado.
-- **Tema escuro** em `.dark`: `--background #1A1614`, `--card #221D1A`,
-  `--foreground #F2EBE4`, primary mantém dourado.
-- **Tokens semânticos extras**: `--surface-tint` (gradiente champanhe→branco do header), `--shadow-soft: 0 8px 24px rgba(43,37,34,0.06)`, `--shadow-pressed`, `--radius` base 14px, com `rounded-3xl` em cards (24px) e `rounded-xl` em botões/inputs.
-- **Badges suaves**: utilities `bg-primary/12 text-primary`, idem success/warning/danger via `color-mix`.
-- `@theme inline` mapeia tudo para classes Tailwind (`bg-background`, `text-primary`, `bg-success/12`, etc.). Zero hex/spacing hardcoded em componentes — regra registrada em `mem://index.md`.
-- **Tipografia**: `<link>` para Google Fonts **Playfair Display** (700) e **Inter** (400/500/600) adicionado no `head` de `src/routes/__root.tsx` (Tailwind v4 não permite `@import` remoto em CSS). Tokens `--font-serif`, `--font-sans`. Escala registrada como utilities: `text-display` (30/serif), `text-h1` (24/serif), `text-h2` (20/serif), `text-body`, `text-label`, `text-caption`.
+## 3. Tabelas (todas em `public`, com `id uuid default gen_random_uuid()`, `created_at`/`updated_at timestamptz default now()`)
 
-## 2. Backend — Lovable Cloud + Auth
+Operacionais (autenticados leem/escrevem):
+- `profiles` (id = auth.users.id, name, email, phone, avatar_url, active bool default true)
+- `user_roles` (user_id → auth.users, role app_role, UNIQUE(user_id, role))
+- `pacientes`, `oportunidades`, `agendamentos`, `conversations`, `messages`, `tasks`, `webhook_events`
 
-- Ativar **Lovable Cloud** (Supabase gerenciado) para habilitar autenticação por e-mail/senha.
-- Sem tabela de profiles nesta etapa (será decidido na próxima); usa apenas `auth.users`.
-- Sessão lida via `supabase` client; listener `onAuthStateChange` registrado uma única vez no `__root.tsx`.
-- Layout protegido gerenciado pela integração em `src/routes/_authenticated/route.tsx` (redireciona para `/auth` quando deslogado).
+Catálogo / config (somente admin escreve, autenticados leem):
+- `procedimentos`, `zapi_instances`, `settings` (chave text unique, valor jsonb), `audit_logs` (somente admin lê/escreve)
 
-## 3. Estrutura de rotas (TanStack file-based)
+Todas as FKs entre tabelas do domínio usam `ON DELETE` apropriado (SET NULL para opcionais, CASCADE para `messages.conversation_id`).
 
-```text
-src/routes/
-  __root.tsx              fontes, providers, listener de auth
-  index.tsx               redirect → /app ou /auth conforme sessão
-  auth.tsx                tela de Login (pública)
-  style.tsx               Style Guide (pública nesta etapa, fácil de remover)
-  _authenticated/
-    route.tsx             gate (managed)
-    app.tsx               layout AppShell + <Outlet/>
-    app.index.tsx         "Início" (placeholder com saudação serif)
-    app.conversas.tsx     placeholder
-    app.agenda.tsx        placeholder
-    app.funil.tsx         placeholder
-    app.pacientes.tsx     placeholder
-```
+## 4. RLS (estrutura padrão por tabela)
 
-## 4. Componentes-base (`src/components/brand/`)
+Para cada tabela: `GRANT SELECT, INSERT, UPDATE, DELETE ... TO authenticated; GRANT ALL ... TO service_role;` depois `ENABLE ROW LEVEL SECURITY` e policies:
 
-Todos consumindo apenas tokens. Cada um com variantes via `cva`:
+- **Operacionais** (profiles, pacientes, oportunidades, agendamentos, conversations, messages, tasks, webhook_events):
+  - SELECT/INSERT/UPDATE/DELETE: `authenticated` com `using (true)` / `with check (true)` (CRM interno; qualquer membro autenticado pode operar).
+  - Exceção `profiles`: UPDATE só do próprio registro ou admin; DELETE só admin.
+  - Exceção `user_roles`: SELECT autenticado; INSERT/UPDATE/DELETE só admin (`has_role(auth.uid(),'admin')`).
+- **Catálogo/config** (procedimentos, zapi_instances, settings):
+  - SELECT: authenticated.
+  - INSERT/UPDATE/DELETE: somente admin via `has_role`.
+- **audit_logs**: SELECT/INSERT/UPDATE/DELETE somente admin.
 
-- **AppShell** — header sticky com gradiente `--surface-tint`, monograma "M" dourado em círculo com anel, título "Dra. Mabyan" (serif) + subtítulo "Harmonização Facial". Conteúdo com `pt-safe`/`pb-safe` (env safe-area). Slot para FAB.
-- **BottomNav** — 5 itens (Início, Conversas, Agenda, Funil, Pacientes), ícone lucide stroke 1.5, label `text-caption`. Item ativo: "pill" dourado suave (`bg-primary/12`) atrás do ícone + texto `text-primary`. Suporte a `badge` numérico. Altura ≥ 64px + safe-area.
-- **FAB** — botão flutuante dourado, `rounded-full`, sombra suave, `active:scale-95`, posicionado acima do BottomNav.
-- **BottomSheet** — wrapper sobre `shadcn/drawer` (vaul), com handle, padding generoso e cantos `rounded-t-3xl`.
-- **ListRow** — avatar com inicial + anel dourado, título serif/sans, subtítulo `muted-foreground`, chevron à direita, área de toque ≥ 56px.
-- **StatCard** — número grande em serif, label em caption, ícone opcional.
-- **SectionHeader** — sticky, fundo `--background/80` com blur leve.
-- **StatusBadge** — variantes `success | warning | danger | info | neutral`, fundo cor/12 + texto cor cheia.
-- **Chip / FilterRow** — pills roláveis horizontalmente, snap.
-- **SegmentedControl** — wrapper sobre `Tabs` com visual pill dourado no ativo.
-- **Avatar** — iniciais quando sem foto (fundo champanhe `bg-primary/12`, texto grafite).
-- **Skeleton / EmptyState** — EmptyState com ilustração leve (SVG inline minimalista), texto e CTA dourado.
-- **Toaster** — `sonner` já presente, estilizado com tokens.
-- Transições globais 200–300ms ease-out, `active:scale-95` em botões, respeitando `prefers-reduced-motion`.
+Sem grants ao `anon` em nenhuma tabela.
 
-## 5. Tela de Login (`/auth`)
+## 5. Triggers
 
-- Layout centralizado, fundo `--background`, card branco `rounded-3xl` com `shadow-soft`.
-- Topo: monograma "M" dourado + "Dra. Mabyan" (serif) + "Harmonização Facial" (caption).
-- Tabs `Entrar` / `Criar conta` (SegmentedControl).
-- Campos e-mail e senha (inputs `rounded-xl`, focus-ring dourado).
-- Botão primário dourado full-width.
-- Link "Esqueci minha senha" → chama `resetPasswordForEmail` com `redirectTo: ${origin}/reset-password` (rota `/reset-password` pública criada com formulário de nova senha via `updateUser`).
-- Erros via toast sonner em tom `danger` suave.
-- Após login → `navigate({ to: '/app' })`.
+- `update_updated_at_column` BEFORE UPDATE em: profiles, pacientes, procedimentos, oportunidades, agendamentos, conversations, tasks, zapi_instances, settings.
+- `handle_new_user` AFTER INSERT em `auth.users` → cria `profiles`.
 
-## 6. Style Guide (`/style`)
+## 6. Seed do catálogo de procedimentos
 
-Página rolável, agrupada em seções com `SectionHeader`:
+`INSERT INTO procedimentos (nome, categoria, retorno_dias, recorrencia_dias, ativo) VALUES ...` com a lista fornecida:
 
-1. **Cores** — swatches de todos os tokens (background, surface, primary, accent, foreground, muted, border, success, warning, danger) + exemplos de badge suave.
-2. **Tipografia** — display/H1/H2/body/label/caption renderizados com nome do token.
-3. **Botões** — primário, secundário, ghost, destrutivo, FAB, com estados hover/active/disabled.
-4. **Inputs & formulários** — input, textarea, select, switch, checkbox, radio.
-5. **Cards & linhas** — StatCard, ListRow, SectionHeader.
-6. **Badges & chips** — StatusBadge em todas variantes, Chips roláveis, SegmentedControl.
-7. **Feedback** — Skeleton, EmptyState, Toast (botão para disparar).
-8. **Sheet** — botão que abre BottomSheet de exemplo.
+| Nome | retorno_dias | recorrencia_dias |
+|---|---|---|
+| Toxina Botulínica | 15 | 120 |
+| Preenchimento Labial | – | 300 |
+| Preenchimento Facial | – | 365 |
+| Bioestimulador de Colágeno | – | 365 |
+| Fios de Sustentação | – | 540 |
+| Skinbooster | – | 90 |
+| Microagulhamento | – | 30 |
+| Peeling Químico | – | 30 |
+| Limpeza de Pele | – | 30 |
+| Harmonização Facial Completa | – | – |
+| Lipo de Papada (enzimas) | – | – |
+| Botox Capilar | – | – |
 
-## 7. PWA instalável
+Idempotente via `ON CONFLICT (nome) DO NOTHING` (adiciono UNIQUE em `procedimentos.nome`).
 
-- `public/manifest.webmanifest` com `name: "Dra. Mabyan — CRM"`, `short_name: "Mabyan"`, `theme_color: #C9A66B`, `background_color: #FAF7F4`, `display: standalone`, `start_url: /`, ícones 192/512 (gerados com monograma "M" dourado em fundo champanhe via imagegen) + `apple-touch-icon`.
-- Tags `<link rel="manifest">`, `<meta name="theme-color" content="#C9A66B">`, `apple-touch-icon`, viewport com `viewport-fit=cover` adicionadas em `__root.tsx`.
-- Sem service worker (manifest-only) — apenas instalável; offline não foi pedido.
+## 7. Entrega
 
-## 8. Critérios de aceite (verificação no fim)
+Uma única chamada `supabase--migration` com todo o SQL acima na ordem: enums → helpers → tabelas (cada uma com GRANT → RLS → policies) → triggers → seed. Após aprovação e regeneração de `src/integrations/supabase/types.ts`, o frontend já passa a ter os tipos prontos para integrar nas próximas telas (sem alteração de código nesta etapa).
 
-- [ ] `/style` renderiza todos os tokens e componentes.
-- [ ] AppShell + BottomNav com pill dourado no ativo e safe-areas (`env(safe-area-inset-*)`).
-- [ ] Login funcional com Supabase (signup, signin, reset).
-- [ ] `manifest.webmanifest` válido, ícones presentes, `theme-color` dourado.
-- [ ] Grep no código garante zero `#`/`bg-[#...]`/`text-white`/`bg-black` em componentes (apenas tokens).
-- [ ] Build do TanStack passa.
-
-## Próxima etapa (fora deste plano)
-
-Implementar conteúdo real das 5 abas (Início com saudação + agenda do dia, Conversas estilo WhatsApp, Agenda com calendário, Funil kanban, Pacientes com busca), schema do banco (pacientes, agendamentos, conversas, etapas do funil) e perfil/role da Dra.
-
+Critérios de aceite atendidos: todas as tabelas com RLS; `has_role()` criado; seed do catálogo aplicado; trigger `handle_new_user` cria profile no signup.
