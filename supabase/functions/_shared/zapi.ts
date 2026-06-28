@@ -53,3 +53,46 @@ export function zapiHeaders(instance: { client_token: string | null }) {
 export function normalizePhone(phone: string) {
   return (phone || "").replace(/\D/g, "");
 }
+
+/** URL pública (HTTPS) do nosso webhook único Z-API. */
+export function buildWebhookUrl(): string | null {
+  const token = Deno.env.get("ZAPI_WEBHOOK_TOKEN");
+  const base = Deno.env.get("SUPABASE_URL");
+  if (!token || !base) return null;
+  return `${base}/functions/v1/zapi-webhook?token=${token}`;
+}
+
+/** Identificador externo de mensagem, conforme variações da Z-API. */
+export function extractExternalId(body: any): string | null {
+  return (
+    body?.messageId ??
+    body?.zaapId ??
+    body?.id ??
+    (Array.isArray(body?.ids) ? body.ids[0] : null) ??
+    null
+  );
+}
+
+/** Deriva a extensão (sem ponto) para o endpoint /send-document/{ext}. */
+export function docExtensionFromMime(
+  mime: string | null | undefined,
+  filename: string | null | undefined,
+): string {
+  const fromName = filename?.split(".").pop()?.toLowerCase();
+  if (fromName && /^[a-z0-9]{2,5}$/.test(fromName)) return fromName;
+  const map: Record<string, string> = {
+    "application/pdf": "pdf",
+    "application/msword": "doc",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+      "docx",
+    "application/vnd.ms-excel": "xls",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+    "application/vnd.ms-powerpoint": "ppt",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation":
+      "pptx",
+    "text/plain": "txt",
+    "text/csv": "csv",
+    "application/zip": "zip",
+  };
+  return (mime && map[mime]) || "pdf";
+}

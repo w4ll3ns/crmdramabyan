@@ -1,12 +1,19 @@
-// Recebe webhooks da Z-API (público, validado por token na query)
+// Recebe webhooks da Z-API (público, validado por token na query).
+// Cobre: ReceivedCallback, DeliveryCallback, MessageStatusCallback,
+// ConnectedCallback e DisconnectedCallback.
+// Refs: https://developer.z-api.io/webhooks/*
 import {
   adminClient,
   corsHeaders,
+  extractExternalId,
   normalizePhone,
 } from "../_shared/zapi.ts";
 
+type MessageType = "text" | "image" | "audio" | "video" | "document";
+
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  if (req.method === "OPTIONS")
+    return new Response(null, { headers: corsHeaders });
 
   const url = new URL(req.url);
   const token = url.searchParams.get("token");
@@ -29,53 +36,101 @@ Deno.serve(async (req) => {
   }
 
   const sb = adminClient();
+  const eventType: string =
+    body.type ?? body.event ?? body.notification ?? "";
 
   // Log bruto
   await sb.from("webhook_events").insert({
     source: "z-api",
-    event_type: body.type ?? body.event ?? null,
+    event_type: eventType || null,
     payload: body,
   });
 
   try {
-    const eventType: string =
-      body.type ?? body.event ?? body.notification ?? "";
+    // === Conexão / desconexão da instância ===
+    if (/connected/i.test(eventType) && !/disconnect/i.test(eventType)) {
+      const phone = normalizePhone(
+        body.connectedPhone || body.phone || body.phoneNumber || "",
+      );
+      await sb
+        .from("zapi_instances")
+        .update({
+          connected: true,
+          status: "connected",
+          ...(phone ? { phone_number: phone } : {}),
+        })
+        .eq("instance_id", body.instanceId ?? "")
+        .then(async (r) => {
+          // Fallback: se não tem instanceId no payload, atualiza a única instância
+          if (!body.instanceId) {
+            await sb
+              .from("zapi_instances")
+              .update({ connected: true, status: "connected" })
+              .neq("id", "");
+          }
+          return r;
+        });
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (/disconnect/i.test(eventType)) {
+      await sb
+        .from("zapi_instances")
+        .update({ connected: false, status: "disconnected" })
+        .eq("instance_id", body.instanceId ?? "")
+        .then(async (r) => {
+          if (!body.instanceId) {
+            await sb
+              .from("zapi_instances")
+              .update({ connected: false, status: "disconnected" })
+              .neq("id", "");
+          }
+          return r;
+        });
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
-    // === Status updates (delivery/read) ===
+    // === Delivery / status de mensagens (SENT|RECEIVED|READ|PLAYED) ===
     if (
-      /MessageStatus|delivery|read|DELIVERED|READ|SENT/i.test(eventType) ||
+      /MessageStatus|DeliveryCallback|delivery|read|DELIVERED|READ|SENT|PLAYED|RECEIVED/i.test(
+        eventType,
+      ) ||
       body.status
     ) {
-      const externalId =
-        body.messageId || body.ids?.[0] || body.zaapId || body.id;
+      const ids: string[] = Array.isArray(body.ids)
+        ? body.ids
+        : [extractExternalId(body)].filter(Boolean) as string[];
       const status = String(
         body.status || body.messageStatus || eventType || "",
       ).toLowerCase();
-      if (externalId) {
-        let mapped: string | null = null;
-        if (/read/.test(status)) mapped = "lido";
-        else if (/deliver/.test(status)) mapped = "entregue";
-        else if (/sent/.test(status)) mapped = "enviado";
-        if (mapped) {
-          await sb
-            .from("messages")
-            .update({ status: mapped })
-            .eq("external_message_id", externalId);
-        }
+      let mapped: string | null = null;
+      if (/read|played/.test(status)) mapped = "lido";
+      else if (/deliver|received/.test(status)) mapped = "entregue";
+      else if (/sent/.test(status)) mapped = "enviado";
+      if (mapped && ids.length) {
+        await sb
+          .from("messages")
+          .update({ status: mapped })
+          .in("external_message_id", ids);
       }
       return new Response(JSON.stringify({ ok: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // === Mensagem recebida ===
-    const fromMe = !!body.fromMe;
-    if (fromMe) {
-      return new Response(JSON.stringify({ ok: true, ignored: "fromMe" }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    // === Mensagem recebida (ReceivedCallback) ===
+    // Ignora grupos/canais por enquanto (não casamos com paciente).
+    if (body.isGroup || body.isNewsletter) {
+      return new Response(
+        JSON.stringify({ ok: true, ignored: "group_or_newsletter" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
     }
 
+    const fromMe = !!body.fromMe;
     const phoneRaw: string =
       body.phone || body.from || body.sender || body.participantPhone || "";
     const telefone = normalizePhone(phoneRaw);
@@ -86,21 +141,68 @@ Deno.serve(async (req) => {
     }
     const nome =
       body.senderName || body.chatName || body.notifyName || telefone;
-    const externalId = body.messageId || body.zaapId || body.id || null;
+    const senderPhoto: string | null = body.senderPhoto || body.photo || null;
+    const externalId = extractExternalId(body);
+    const momentMs = Number(body.momment ?? body.moment ?? 0);
+    const sentAtIso =
+      momentMs > 0 ? new Date(momentMs).toISOString() : new Date().toISOString();
 
-    // Detectar tipo + conteúdo
-    let type: "text" | "image" | "audio" | "video" | "document" = "text";
+    // === Reações: atualiza a mensagem alvo, não cria nova ===
+    if (body.reaction || body.reactionMessage) {
+      const reaction = body.reaction ?? body.reactionMessage ?? {};
+      const refId =
+        reaction.referencedMessage?.messageId ??
+        reaction.referencedMessageId ??
+        reaction.messageId ??
+        null;
+      const emoji = reaction.value ?? reaction.reaction ?? "";
+      if (refId) {
+        const { data: target } = await sb
+          .from("messages")
+          .select("id, content_text, type")
+          .eq("external_message_id", refId)
+          .maybeSingle();
+        if (target) {
+          const base = (target.content_text ?? "").replace(/\s*[•]\s*reação:.*$/u, "");
+          await sb
+            .from("messages")
+            .update({
+              content_text: emoji
+                ? `${base}${base ? " " : ""}• reação: ${emoji}`
+                : base,
+            })
+            .eq("id", target.id);
+        }
+      }
+      return new Response(JSON.stringify({ ok: true, reaction: true }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Dedup por external_message_id
+    if (externalId) {
+      const { data: existing } = await sb
+        .from("messages")
+        .select("id")
+        .eq("external_message_id", externalId)
+        .maybeSingle();
+      if (existing) {
+        return new Response(
+          JSON.stringify({ ok: true, ignored: "duplicate" }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+    }
+
+    // Detectar tipo + conteúdo (enum suporta text|image|audio|video|document)
+    let type: MessageType = "text";
     let content_text: string | null = null;
     let media_url: string | null = null;
     let media_mime_type: string | null = null;
 
-    if (body.text?.message) {
-      content_text = body.text.message;
-    } else if (body.message?.text) {
-      content_text = body.message.text;
-    } else if (typeof body.message === "string") {
-      content_text = body.message;
-    }
+    if (body.text?.message) content_text = body.text.message;
+    else if (body.message?.text) content_text = body.message.text;
+    else if (typeof body.message === "string") content_text = body.message;
 
     if (body.image) {
       type = "image";
@@ -121,31 +223,73 @@ Deno.serve(async (req) => {
       media_url = body.document.documentUrl || body.document.url || null;
       media_mime_type = body.document.mimeType || "application/pdf";
       content_text = body.document.fileName || content_text;
+    } else if (body.sticker) {
+      // Mapeia sticker como image (enum não tem sticker dedicado)
+      type = "image";
+      media_url = body.sticker.stickerUrl || body.sticker.url || null;
+      media_mime_type = body.sticker.mimeType || "image/webp";
+      content_text = content_text || "🟦 figurinha";
+    } else if (body.location) {
+      // Mapeia location como text descritivo
+      const { latitude, longitude, name, address } = body.location;
+      content_text = [
+        `📍 ${latitude},${longitude}`,
+        name,
+        address,
+      ]
+        .filter(Boolean)
+        .join(" — ");
+    } else if (body.contact || body.contacts) {
+      const c = body.contact ?? body.contacts?.[0] ?? {};
+      content_text = `👤 ${c.displayName || c.name || ""} ${c.phones?.[0]?.phone || c.phone || ""}`.trim();
+    } else if (body.poll) {
+      const options = (body.poll.options || [])
+        .map((o: any) => `• ${o.name ?? o.text ?? o}`)
+        .join("\n");
+      content_text = `📊 ${body.poll.name ?? body.poll.question ?? "Enquete"}\n${options}`;
     }
 
-    // Upsert paciente por telefone
+    // Upsert paciente por telefone (somente para mensagens recebidas)
     let pacienteId: string | null = null;
-    const { data: pacExistente } = await sb
-      .from("pacientes")
-      .select("id")
-      .or(`telefone.eq.${telefone},whatsapp.eq.${telefone}`)
-      .limit(1)
-      .maybeSingle();
-    if (pacExistente) {
-      pacienteId = pacExistente.id;
-    } else {
-      const { data: pacNovo, error: pErr } = await sb
+    if (!fromMe) {
+      const { data: pacExistente } = await sb
         .from("pacientes")
-        .insert({
-          nome,
-          telefone,
-          whatsapp: telefone,
-          origem: "whatsapp",
-        })
+        .select("id, foto_url")
+        .or(`telefone.eq.${telefone},whatsapp.eq.${telefone}`)
+        .limit(1)
+        .maybeSingle();
+      if (pacExistente) {
+        pacienteId = pacExistente.id;
+        if (senderPhoto && !pacExistente.foto_url) {
+          await sb
+            .from("pacientes")
+            .update({ foto_url: senderPhoto })
+            .eq("id", pacienteId);
+        }
+      } else {
+        const { data: pacNovo, error: pErr } = await sb
+          .from("pacientes")
+          .insert({
+            nome,
+            telefone,
+            whatsapp: telefone,
+            origem: "whatsapp",
+            ...(senderPhoto ? { foto_url: senderPhoto } : {}),
+          })
+          .select("id")
+          .single();
+        if (pErr) throw pErr;
+        pacienteId = pacNovo.id;
+      }
+    } else {
+      // Para fromMe, tenta achar o paciente existente (não cria a partir do próprio número)
+      const { data: pac } = await sb
+        .from("pacientes")
         .select("id")
-        .single();
-      if (pErr) throw pErr;
-      pacienteId = pacNovo.id;
+        .or(`telefone.eq.${telefone},whatsapp.eq.${telefone}`)
+        .limit(1)
+        .maybeSingle();
+      pacienteId = pac?.id ?? null;
     }
 
     // Upsert conversa por telefone
@@ -155,16 +299,18 @@ Deno.serve(async (req) => {
       .select("id, status")
       .eq("telefone", telefone)
       .maybeSingle();
-    const now = new Date().toISOString();
     if (convExistente) {
       conversaId = convExistente.id;
       await sb
         .from("conversations")
         .update({
-          ultima_mensagem_em: now,
-          status:
-            convExistente.status === "em_atendimento" ? "em_atendimento" : "nao_lida",
-          paciente_id: pacienteId,
+          ultima_mensagem_em: sentAtIso,
+          status: fromMe
+            ? convExistente.status
+            : convExistente.status === "em_atendimento"
+              ? "em_atendimento"
+              : "nao_lida",
+          ...(pacienteId ? { paciente_id: pacienteId } : {}),
         })
         .eq("id", conversaId);
     } else {
@@ -173,8 +319,8 @@ Deno.serve(async (req) => {
         .insert({
           telefone,
           paciente_id: pacienteId,
-          status: "nao_lida",
-          ultima_mensagem_em: now,
+          status: fromMe ? "em_atendimento" : "nao_lida",
+          ultima_mensagem_em: sentAtIso,
         })
         .select("id")
         .single();
@@ -184,14 +330,14 @@ Deno.serve(async (req) => {
 
     await sb.from("messages").insert({
       conversation_id: conversaId,
-      direction: "inbound",
+      direction: fromMe ? "outbound" : "inbound",
       type,
       content_text,
       media_url,
       media_mime_type,
       external_message_id: externalId,
-      status: null,
-      sent_at: now,
+      status: fromMe ? "enviado" : null,
+      sent_at: sentAtIso,
     });
 
     return new Response(JSON.stringify({ ok: true }), {
