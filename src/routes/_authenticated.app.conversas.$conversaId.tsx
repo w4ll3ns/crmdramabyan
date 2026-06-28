@@ -678,7 +678,7 @@ function ConversaDetail() {
         description={
           modelos && modelos.length > 0
             ? "Toque para inserir."
-            : "Cadastre modelos em Configurações."
+            : "Cadastre modelos em Configurações > Automações."
         }
       >
         {!modelos || modelos.length === 0 ? (
@@ -687,24 +687,40 @@ function ConversaDetail() {
           </div>
         ) : (
           <ul className="flex flex-col gap-1 max-h-[60vh] overflow-auto">
-            {modelos.map((m, i) => (
-              <li key={i}>
-                <button
-                  className="w-full text-left px-3 py-3 rounded-2xl active:bg-muted/60"
-                  onClick={() => {
-                    setText((t) => (t ? `${t}\n${m}` : m));
-                    setModelosOpen(false);
-                  }}
-                >
-                  <div className="text-label whitespace-pre-wrap line-clamp-3">
-                    {m}
-                  </div>
-                </button>
-              </li>
-            ))}
+            {modelos.map((m) => {
+              const nomePac = conversa?.paciente?.nome ?? "";
+              const vars: Record<string, string> = {
+                nome: nomePac,
+                primeiro_nome: nomePac.split(" ")[0] ?? "",
+                nome_clinica: nomeClinica ?? "",
+                data: "",
+                hora: "",
+                procedimento: "",
+                profissional: "",
+                valor: "",
+              };
+              const rendered = renderTemplate(m.corpo, vars);
+              return (
+                <li key={m.id}>
+                  <button
+                    className="w-full text-left px-3 py-3 rounded-2xl active:bg-muted/60"
+                    onClick={() => {
+                      setText((t) => (t ? `${t}\n${rendered}` : rendered));
+                      setModelosOpen(false);
+                    }}
+                  >
+                    <div className="text-label font-medium">{m.nome}</div>
+                    <div className="text-caption text-muted-foreground whitespace-pre-wrap line-clamp-2 mt-0.5">
+                      {rendered}
+                    </div>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         )}
       </BottomSheet>
+
 
       {/* Anexar do aparelho */}
       <BottomSheet
