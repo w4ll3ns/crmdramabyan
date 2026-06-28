@@ -1,75 +1,57 @@
-# Diagnóstico: número errado no novo lead
+## Correções de automações (enum, pausa, nome_clinica, segredo cron)
 
-## O que aconteceu
+### 1. Migration SQL única
+Arquivo novo em `supabase/migrations/`:
 
-O lead chegou via anúncio Click-to-WhatsApp do Facebook (campo `externalAdReply` no payload, com `sourceType: "ad"`, `sourceApp: "facebook"`). Nesses casos o WhatsApp **mascara o número real** do usuário com um identificador chamado **LID** (Linked Device ID), por privacidade.
+- **Recriar `public.trg_agendamento_after_update`** idêntica à atual, trocando apenas `'alta'::public.task_prioridade` por `'alta'::public.task_priority` no `INSERT INTO public.tasks` do ramo `status = 'faltou'`. Resto da função preservado.
+- **Recriar `public.enfileirar_automacao(...)`** idêntica à atual, trocando o `SELECT ... FROM public.settings WHERE chave = 'regua_pausado'` por `'automacoes_pausado'`. Resto preservado.
+- **Seed/migração de chave**: `INSERT INTO public.settings(chave, valor) VALUES ('automacoes_pausado', 'false'::jsonb) ON CONFLICT (chave) DO NOTHING;` e, se existir `regua_pausado`, copiar valor para `automacoes_pausado` quando este ainda for default.
+- **Padronizar `clinica_nome`**: `INSERT ... ('clinica_nome', '"Clínica"'::jsonb) ON CONFLICT DO NOTHING;` e, se existir `nome_clinica` com valor não vazio e `clinica_nome` inexistente/vazio, copiar.
+- **Revogar execução pública**:
+  ```sql
+  REVOKE EXECUTE ON FUNCTION public.run_regua_aniversario() FROM PUBLIC, anon, authenticated;
+  REVOKE EXECUTE ON FUNCTION public.run_regua_reativacao() FROM PUBLIC, anon, authenticated;
+  REVOKE EXECUTE ON FUNCTION public.enfileirar_automacao(uuid, public.modelo_tipo, timestamptz, uuid, jsonb, text, uuid) FROM PUBLIC, anon, authenticated;
+  GRANT EXECUTE ON FUNCTION ... TO service_role;
+  ```
+  Triggers continuam funcionando (SECURITY DEFINER).
 
-No webhook recebido (`webhook_events` id `5aa85d36-…`), o payload veio assim:
+### 2. Secret CRON_SECRET
+- Gerar com `generate_secret` (64 chars), nome `CRON_SECRET`. Fica disponível tanto para edge functions quanto para o runtime do TanStack (Cloudflare Worker).
 
-```
-phone:           "44891786768631@lid"
-chatLid:         "44891786768631@lid"
-participantLid:  null
-senderName:      "Lucia"
-externalAdReply: { sourceType: "ad", sourceApp: "facebook", ... }
-```
+### 3. Edge function `processar-mensagens-agendadas/index.ts`
+- No topo do handler, antes de qualquer trabalho:
+  ```ts
+  const provided = req.headers.get('x-cron-secret');
+  const expected = Deno.env.get('CRON_SECRET');
+  if (!expected || provided !== expected) {
+    return new Response(JSON.stringify({ error: 'unauthorized' }), {
+      status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+  ```
+  (mantém `OPTIONS` preflight livre).
+- Trocar `getSetting<string>(rows, "nome_clinica", "Clínica")` por `"clinica_nome"`.
+- Leitura de `automacoes_pausado` já está correta — manter.
 
-O número real **+55 98 97005-0911** (`5598970050911`) não está em nenhum campo do payload — o WhatsApp não envia, é preciso **resolver o LID** chamando um endpoint extra da Z-API.
+### 4. Rota `src/routes/api/public/hooks/reguas-cron.ts`
+- Mesma checagem `x-cron-secret` antes do `rpc`. `process.env.CRON_SECRET` lido dentro do handler. 401 sem header válido.
 
-Hoje, `zapi-webhook/index.ts` faz:
+### 5. Frontend `src/components/automacoes/ReguasTab.tsx`
+- Atualmente o switch global usa `chave: "regua_pausado"`. Trocar para `"automacoes_pausado"` na chamada `set.mutateAsync` e na leitura `reguas?.regua_pausado` → `reguas?.automacoes_pausado`.
+- Verificar `src/hooks/useReguas.ts` para incluir `automacoes_pausado` na lista de chaves carregadas (se houver allowlist) — se já busca livre por chave, nada a fazer.
+- Tela de Configurações da clínica (`_authenticated.app.configuracoes.index.tsx`): garantir que o campo de nome grava `clinica_nome` (não `nome_clinica`). Vou inspecionar o arquivo durante a implementação e ajustar se necessário.
 
-```ts
-const phoneRaw = body.phone || body.from || body.sender || ...
-const telefone = normalizePhone(phoneRaw); // "44891786768631"
-```
+### 6. Cron jobs no banco
+- Listar `cron.job` para `processar-mensagens-agendadas` e `reguas-cron`; atualizar `headers` JSON adicionando `"x-cron-secret": "<valor>"`. Será feito via `supabase--insert` após a secret existir, lendo o valor através de `current_setting` não é possível — então passamos o valor literal nos `cron.alter_job`/reschedule. Vou listar os jobs existentes primeiro para reagendar com o header correto preservando schedule e URL.
 
-…e usa esse LID como se fosse telefone — daí o paciente/conversa salvos com `telefone = 44891786768631` (o que você viu na tela) em vez de `5598970050911`.
+### Validação pós-deploy
+- `psql` test: UPDATE de um agendamento para `'faltou'` (em ambiente de teste) — espera sucesso e linha em `tasks`.
+- `curl` no endpoint sem header → 401; com header → 200.
+- Toggle pausa no frontend reflete em `settings.automacoes_pausado` e processador pula execução.
+- Render de template com `{{nome_clinica}}` traz o valor de `clinica_nome`.
 
-Eventos subsequentes (`PresenceChatCallback`) também trazem só o `@lid`, então não há autocorreção depois.
-
-## Plano de correção
-
-### 1. Detectar LID no webhook
-
-Em `supabase/functions/zapi-webhook/index.ts`, ao montar `phoneRaw`, verificar se `phone` / `chatLid` contém `@lid` (ou se `phone` é todo numérico mas sem prefixo de país plausível e existe `chatLid`).
-
-### 2. Resolver LID → telefone real via Z-API
-
-Criar helper `resolveLidToPhone(lid, instance)` em `supabase/functions/_shared/zapi.ts`. A Z-API expõe, para contas com WhatsApp LID habilitado, o endpoint:
-
-```
-GET {zapiBase}/lid-to-phone/{lid}        // retorna { phone: "5598970050911" }
-```
-
-(fallbacks: `chat-metadata/{lid}`, `phone-exists-lid/{lid}` — testar qual responde no plano da conta e usar o primeiro com sucesso). Cachear em memória por requisição.
-
-Se a resolução falhar, registrar `webhook_events` com `event_type = "lid_unresolved"` e **não** criar paciente/conversa com o LID — guardar a mensagem em uma conversa "pendente de identificação" usando o LID com sufixo `@lid` em `telefone` para não conflitar com números reais, e gerar uma `task` "Identificar lead vindo de anúncio (LID …)".
-
-### 3. Backfill do lead atual
-
-Migration única (one-off SQL) que:
-
-- Atualiza `pacientes` e `conversations` onde `telefone = '44891786768631'` para `telefone = '5598970050911'` e `whatsapp = '5598970050911'`.
-- Se já existir paciente com `5598970050911`, faz merge (move `messages` da conversa antiga para a do número real e apaga a duplicada).
-
-### 4. Salvar o LID para futuras correlações
-
-Adicionar coluna `wa_lid TEXT` em `pacientes` (nullable, índice único parcial). Quando resolvermos o LID, gravamos `wa_lid` no paciente — assim, se o mesmo LID voltar (ex.: `PresenceChatCallback`), encontramos o paciente direto sem nova chamada HTTP.
-
-### 5. Marcar origem do lead
-
-Quando `externalAdReply` está presente no `ReceivedCallback`, gravar em `pacientes.origem` algo como `"facebook_ad"` (em vez de apenas `"whatsapp"`) e salvar `externalAdReply.sourceId` / `sourceUrl` em `pacientes.observacoes` (ou em coluna nova `lead_ad_ref JSONB`), para você saber depois de qual anúncio veio.
-
-## Detalhes técnicos
-
-- Z-API base já existe em `_shared/zapi.ts` (`zapiBase`, `zapiHeaders`).
-- Buscar a instância ativa por `body.instanceId` em `zapi_instances` para montar a URL/headers.
-- Timeout curto (5s) na chamada de resolução; em erro, cair no fluxo "pendente".
-- Manter idempotência: a dedupe por `external_message_id` continua funcionando.
-
-## Critérios de aceite
-
-1. Novo lead vindo de anúncio FB aparece com o telefone real (formato `55DDDNNNNNNNNN`), não com `…@lid`.
-2. O paciente "Lucia" atual passa a ter telefone `+55 98 97005-0911` após o backfill, sem duplicar registros.
-3. Mensagens subsequentes do mesmo LID caem na mesma conversa do número real.
-4. Se a Z-API não resolver o LID, a mensagem não é perdida — fica em conversa pendente + task de identificação.
+### Detalhes técnicos
+- A função `enfileirar_automacao` tem assinatura com 7 args (incluindo defaults) — o `REVOKE` precisa da assinatura completa exata.
+- `CRON_SECRET` no Worker: `process.env.CRON_SECRET` dentro do handler (não no módulo). No Deno edge: `Deno.env.get('CRON_SECRET')`.
+- Sem mudanças em `supabase/config.toml`.
