@@ -242,17 +242,6 @@ function ZapiConfig() {
         </div>
       </div>
 
-  return (
-    <div className="px-5 pt-5 pb-10 flex flex-col gap-5 max-w-xl mx-auto">
-      <div className="flex items-center gap-3">
-        <Smartphone className="h-6 w-6 text-primary" strokeWidth={1.5} />
-        <div>
-          <div className="text-h2">Z-API · WhatsApp</div>
-          <div className="text-caption text-muted-foreground">
-            Configure a instância exclusiva da clínica.
-          </div>
-        </div>
-      </div>
 
       {/* Status */}
       <div className="rounded-2xl border border-border bg-card p-4 flex items-center gap-3">
