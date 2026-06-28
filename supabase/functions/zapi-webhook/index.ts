@@ -153,7 +153,54 @@ Deno.serve(async (req) => {
     const fromMe = !!body.fromMe;
     const phoneRaw: string =
       body.phone || body.from || body.sender || body.participantPhone || "";
-    const telefone = normalizePhone(phoneRaw);
+    const chatLidRaw: string = body.chatLid || body.participantLid || "";
+
+    // Detecta LID (lead vindo de Click-to-WhatsApp de anúncios FB/IG).
+    // O WhatsApp mascara o número real e envia "<digits>@lid" no campo phone.
+    let waLid: string | null = null;
+    if (isLid(phoneRaw)) waLid = lidDigits(phoneRaw);
+    else if (isLid(chatLidRaw)) waLid = lidDigits(chatLidRaw);
+
+    let telefone = isLid(phoneRaw) ? "" : normalizePhone(phoneRaw);
+
+    // Se chegou LID: tenta resolver para telefone real (1) por paciente já
+    // mapeado em wa_lid, (2) chamando a Z-API.
+    if (!telefone && waLid) {
+      const { data: pacByLid } = await sb
+        .from("pacientes")
+        .select("telefone, whatsapp")
+        .eq("wa_lid", waLid)
+        .maybeSingle();
+      if (pacByLid?.telefone || pacByLid?.whatsapp) {
+        telefone = normalizePhone(pacByLid.telefone || pacByLid.whatsapp || "");
+      } else {
+        try {
+          const { data: inst } = await sb
+            .from("zapi_instances")
+            .select("instance_id, token, client_token")
+            .order("updated_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (inst?.instance_id && inst?.token) {
+            const resolved = await resolveLidToPhone(waLid, inst);
+            if (resolved) telefone = resolved;
+          }
+        } catch (e) {
+          console.error("resolveLidToPhone failed", e);
+        }
+      }
+      // Não resolveu: usa um pseudo-telefone "lid:<digits>" para não colidir
+      // com números reais e deixa o atendente identificar manualmente.
+      if (!telefone) {
+        telefone = `lid${waLid}`;
+        await sb.from("webhook_events").insert({
+          source: "z-api",
+          event_type: "lid_unresolved",
+          payload: { waLid, original: body },
+        });
+      }
+    }
+
     if (!telefone) {
       await sb.from("webhook_events").insert({
         source: "z-api",
