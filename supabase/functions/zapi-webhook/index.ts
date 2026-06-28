@@ -324,7 +324,7 @@ Deno.serve(async (req) => {
     // Origem do lead: anúncio FB/IG vs whatsapp orgânico
     const adRef = body.externalAdReply ?? null;
     const isAdLead = !!adRef;
-    const origemLead = isAdLead ? "facebook_ad" : "whatsapp";
+    const origemLead = isAdLead ? "anuncio_meta" : "whatsapp";
 
     // Upsert paciente por telefone OU por wa_lid (somente para mensagens recebidas)
     let pacienteId: string | null = null;
