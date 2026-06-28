@@ -40,7 +40,7 @@ export function useLeadsNovosCount() {
       const { count, error } = await supabase
         .from("oportunidades")
         .select("id", { count: "exact", head: true })
-        .eq("status", "ativa")
+        .eq("status", "aberta")
         .eq("etapa", "novo_lead")
         .gte("created_at", since.toISOString());
       if (error) throw error;
@@ -59,7 +59,7 @@ export function useFollowupsAtrasadosCount() {
         supabase
           .from("oportunidades")
           .select("id", { count: "exact", head: true })
-          .eq("status", "ativa")
+          .eq("status", "aberta")
           .lt("proximo_followup_em", nowIso),
         supabase
           .from("tasks")
@@ -109,7 +109,7 @@ export function useMiniFunil() {
       const { data, error } = await supabase
         .from("oportunidades")
         .select("etapa, valor_estimado")
-        .eq("status", "ativa");
+        .eq("status", "aberta");
       if (error) throw error;
       const map = new Map<string, { count: number; valor: number }>();
       for (const r of data ?? []) {
