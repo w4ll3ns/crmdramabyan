@@ -18,6 +18,13 @@ type Instance = {
   connected: boolean;
 };
 
+type ZapiRemoteStatus = {
+  connected?: boolean;
+  webhookConfigured?: boolean;
+  receivedWebhookConfigured?: boolean;
+  receiveCallbackSentByMe?: boolean;
+};
+
 async function fetchInstance(): Promise<Instance | null> {
   const { data } = await supabase
     .from("zapi_instances")
@@ -32,9 +39,24 @@ function ZapiConfig() {
   const isAdmin = useIsAdmin();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const [qr, setQr] = useState<string | null>(null);
+  const [polling, setPolling] = useState(false);
   const { data: instance, isLoading } = useQuery({
     queryKey: ["zapi-instance"],
     queryFn: fetchInstance,
+  });
+  const { data: remoteStatus } = useQuery({
+    queryKey: ["zapi-remote-status", instance?.id],
+    enabled: !!instance && isAdmin === true,
+    queryFn: async (): Promise<ZapiRemoteStatus> => {
+      const { data, error } = await supabase.functions.invoke(
+        "zapi-instance-manager",
+        { body: { action: "status" } },
+      );
+      if (error) throw error;
+      return data ?? {};
+    },
+    refetchInterval: polling ? 3000 : false,
   });
 
   const [form, setForm] = useState({
@@ -57,9 +79,6 @@ function ZapiConfig() {
     }
   }, [instance]);
 
-  const [qr, setQr] = useState<string | null>(null);
-  const [polling, setPolling] = useState(false);
-
   // Poll status enquanto QR aberto
   useEffect(() => {
     if (!polling) return;
@@ -72,6 +91,7 @@ function ZapiConfig() {
         setQr(null);
         toast.success("WhatsApp conectado!");
         qc.invalidateQueries({ queryKey: ["zapi-instance"] });
+        qc.invalidateQueries({ queryKey: ["zapi-remote-status"] });
       }
     }, 3000);
     return () => clearInterval(t);
@@ -127,6 +147,7 @@ function ZapiConfig() {
     }
     toast.success("Configuração salva");
     qc.invalidateQueries({ queryKey: ["zapi-instance"] });
+    qc.invalidateQueries({ queryKey: ["zapi-remote-status"] });
   }
 
   async function conectar() {
@@ -141,6 +162,7 @@ function ZapiConfig() {
     if (data?.connected) {
       toast.success("Já está conectado");
       qc.invalidateQueries({ queryKey: ["zapi-instance"] });
+      qc.invalidateQueries({ queryKey: ["zapi-remote-status"] });
       return;
     }
     const img = data?.value || data?.image || data?.qrcode;
@@ -162,6 +184,7 @@ function ZapiConfig() {
     }
     toast.success("Desconectado");
     qc.invalidateQueries({ queryKey: ["zapi-instance"] });
+    qc.invalidateQueries({ queryKey: ["zapi-remote-status"] });
   }
 
   async function atualizarStatus() {
@@ -173,7 +196,25 @@ function ZapiConfig() {
       return;
     }
     qc.invalidateQueries({ queryKey: ["zapi-instance"] });
+    qc.invalidateQueries({ queryKey: ["zapi-remote-status"] });
   }
+
+  async function ativarRecebimento() {
+    const { error } = await supabase.functions.invoke(
+      "zapi-instance-manager",
+      { body: { action: "configure-webhook" } },
+    );
+    if (error) {
+      toast.error("Erro ao ativar recebimento", { description: error.message });
+      return;
+    }
+    toast.success("Recebimento de mensagens ativado");
+    qc.invalidateQueries({ queryKey: ["zapi-remote-status"] });
+  }
+
+  const recebimentoAtivo = !!(
+    remoteStatus?.receivedWebhookConfigured || remoteStatus?.webhookConfigured
+  );
 
   return (
     <div className="px-5 pt-5 pb-10 flex flex-col gap-5 max-w-xl mx-auto">
@@ -192,12 +233,14 @@ function ZapiConfig() {
         <span
           className={cn(
             "h-3 w-3 rounded-full",
-            instance?.connected ? "bg-success" : "bg-muted-foreground/40",
+            instance?.connected || remoteStatus?.connected
+              ? "bg-success"
+              : "bg-muted-foreground/40",
           )}
         />
         <div className="flex-1">
           <div className="text-label">
-            {instance?.connected ? "Conectado" : "Desconectado"}
+            {instance?.connected || remoteStatus?.connected ? "Conectado" : "Desconectado"}
           </div>
           <div className="text-caption text-muted-foreground">
             {instance?.phone_number || "Nenhum número vinculado"}
@@ -246,6 +289,21 @@ function ZapiConfig() {
       {/* Ações */}
       <div className="rounded-2xl border border-border bg-card p-4 flex flex-col gap-3">
         <div className="text-label font-medium">Conexão</div>
+        {instance ? (
+          <div className="rounded-xl bg-muted px-3 py-2 flex items-center gap-2">
+            <span
+              className={cn(
+                "h-2.5 w-2.5 rounded-full",
+                recebimentoAtivo ? "bg-success" : "bg-warning",
+              )}
+            />
+            <div className="text-caption text-muted-foreground">
+              {recebimentoAtivo
+                ? "Recebimento de mensagens ativo"
+                : "Recebimento de mensagens pendente"}
+            </div>
+          </div>
+        ) : null}
         {qr ? (
           <div className="flex flex-col items-center gap-2">
             <img
@@ -276,6 +334,13 @@ function ZapiConfig() {
             </button>
           ) : null}
         </div>
+        <button
+          onClick={ativarRecebimento}
+          disabled={!instance || !(instance.connected || remoteStatus?.connected)}
+          className="h-11 rounded-2xl border border-border bg-card text-label disabled:opacity-50"
+        >
+          Ativar recebimento de mensagens
+        </button>
       </div>
 
       {/* Webhook */}

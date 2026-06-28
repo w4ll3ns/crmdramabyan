@@ -63,10 +63,34 @@ Deno.serve(async (req) => {
     const base = zapiBase(instance);
     const headers = zapiHeaders(instance);
 
+    const webhookToken = Deno.env.get("ZAPI_WEBHOOK_TOKEN");
+    const webhookUrl = webhookToken
+      ? `${Deno.env.get("SUPABASE_URL")}/functions/v1/zapi-webhook?token=${webhookToken}`
+      : null;
+
     let path = "";
+    let method = "GET";
+    let zapiBody: Record<string, unknown> | undefined;
     switch (action) {
       case "status":
         path = "/status";
+        break;
+      case "me":
+        path = "/me";
+        break;
+      case "configure-webhook":
+        if (!webhookUrl) {
+          return new Response(
+            JSON.stringify({ error: "Token do webhook não configurado" }),
+            {
+              status: 500,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            },
+          );
+        }
+        path = "/update-webhook-received";
+        method = "PUT";
+        zapiBody = { value: webhookUrl };
         break;
       case "qr-code":
         path = "/qr-code/image";
@@ -91,19 +115,69 @@ Deno.serve(async (req) => {
         });
     }
 
-    const res = await fetch(`${base}${path}`, { headers });
+    const res = await fetch(`${base}${path}`, {
+      method,
+      headers,
+      body: zapiBody ? JSON.stringify(zapiBody) : undefined,
+    });
     const json = await res.json().catch(() => ({}));
 
     // Sincroniza connected/phone_number quando status
     if (action === "status" && res.ok) {
       const connected = !!json.connected;
+      const meRes = await fetch(`${base}/me`, { headers });
+      const meJson = await meRes.json().catch(() => ({}));
+      const receivedCallbackUrl = String(meJson.receivedCallbackUrl ?? "");
+      const receivedWebhookConfigured = !!(
+        webhookUrl && receivedCallbackUrl === webhookUrl
+      );
       await sb
         .from("zapi_instances")
         .update({
           connected,
           status: connected ? "connected" : json.session || "disconnected",
+          phone_number: meJson.phone ?? meJson.phoneNumber ?? instance.phone_number,
         })
         .eq("id", instance.id);
+      return new Response(
+        JSON.stringify({
+          ...json,
+          connected,
+          receivedWebhookConfigured,
+          webhookConfigured: receivedWebhookConfigured,
+        }),
+        {
+          status: res.status,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
+    if (action === "me" && res.ok) {
+      const receivedCallbackUrl = String(json.receivedCallbackUrl ?? "");
+      const receivedWebhookConfigured = !!(
+        webhookUrl && receivedCallbackUrl === webhookUrl
+      );
+      return new Response(
+        JSON.stringify({
+          connected: !!json.connected,
+          receivedWebhookConfigured,
+          webhookConfigured: receivedWebhookConfigured,
+          receiveCallbackSentByMe: !!json.receiveCallbackSentByMe,
+        }),
+        {
+          status: res.status,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
+    if (action === "configure-webhook" && res.ok) {
+      return new Response(
+        JSON.stringify({ ok: true, receivedWebhookConfigured: true }),
+        {
+          status: res.status,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
     if (action === "disconnect") {
       await sb
