@@ -1,26 +1,33 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { StatCard } from "@/components/brand/StatCard";
 import { SectionHeader } from "@/components/brand/SectionHeader";
 import { ListRow } from "@/components/brand/ListRow";
 import { StatusBadge } from "@/components/brand/StatusBadge";
 import { Fab } from "@/components/brand/Fab";
 import { Calendar, MessageCircle, Sparkles, Plus } from "lucide-react";
-import { auth } from "@/lib/auth";
+import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/_authenticated/app/")({
   component: HomePage,
 });
 
 function HomePage() {
-  const session = typeof window !== "undefined" ? auth.getSession() : null;
-  const firstName = session?.email?.split("@")[0]?.split(".")[0] ?? "Dra.";
-  const greeting = capitalize(firstName);
+  const [name, setName] = useState("Dra.");
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      const email = data.user?.email ?? "";
+      const first = email.split("@")[0]?.split(".")[0] ?? "Dra.";
+      setName(first.charAt(0).toUpperCase() + first.slice(1));
+    });
+  }, []);
 
   return (
     <>
       <section className="px-5 pt-6 pb-2">
         <p className="text-caption text-muted-foreground">Bom dia,</p>
-        <h1 className="text-display text-foreground mt-1">{greeting}</h1>
+        <h1 className="text-display text-foreground mt-1">{name}</h1>
         <p className="text-caption text-muted-foreground mt-2 max-w-xs">
           Tudo pronto para o seu dia. Aqui está um resumo.
         </p>
@@ -73,8 +80,4 @@ function HomePage() {
       </Fab>
     </>
   );
-}
-
-function capitalize(s: string) {
-  return s.charAt(0).toUpperCase() + s.slice(1);
 }
