@@ -9,11 +9,14 @@ import { PainelMetricas } from "@/components/automacoes/PainelMetricas";
 import {
   useModelos,
   useUpdateModelo,
+  useCreateModelo,
+  useDeleteModelo,
   type Modelo,
 } from "@/hooks/useMensagens";
-import { MODELO_TIPOS } from "@/lib/templates";
+import { MODELO_TIPOS, type ModeloTipo } from "@/lib/templates";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { toast } from "sonner";
+import { Plus, Trash2 } from "lucide-react";
 
 type Tab = "reguas" | "modelos" | "janela" | "metricas";
 
@@ -29,13 +32,31 @@ function AutomacoesPage() {
   const [tab, setTab] = useState<Tab>("reguas");
   const { data: modelos } = useModelos();
   const update = useUpdateModelo();
-  const [tipo, setTipo] = useState<string>("confirmacao");
+  const createModelo = useCreateModelo();
+  const deleteModelo = useDeleteModelo();
+  const [tipo, setTipo] = useState<ModeloTipo>("confirmacao");
+  const [variantId, setVariantId] = useState<string | null>(null);
   const [draft, setDraft] = useState<Modelo | null>(null);
 
+  const variants = useMemo(
+    () => (modelos ?? []).filter((m) => m.tipo === tipo),
+    [modelos, tipo],
+  );
+
+  // Mantém variantId válida quando o tipo muda
+  useEffect(() => {
+    if (!variants.length) {
+      setVariantId(null);
+      return;
+    }
+    if (!variantId || !variants.find((v) => v.id === variantId)) {
+      setVariantId(variants[0].id);
+    }
+  }, [variants, variantId]);
 
   const selected = useMemo(
-    () => modelos?.find((m) => m.tipo === tipo) ?? null,
-    [modelos, tipo],
+    () => variants.find((m) => m.id === variantId) ?? null,
+    [variants, variantId],
   );
 
   useEffect(() => {
@@ -49,6 +70,34 @@ function AutomacoesPage() {
       </div>
     );
   }
+
+  const handleNovaVariante = async () => {
+    try {
+      const n = variants.length + 1;
+      const novo = await createModelo.mutateAsync({
+        nome: `Variante ${n}`,
+        tipo,
+        corpo: "",
+        ativo: true,
+      });
+      setVariantId(novo.id);
+      toast.success("Variante criada");
+    } catch (e) {
+      toast.error("Falha ao criar variante", { description: (e as Error).message });
+    }
+  };
+
+  const handleExcluirVariante = async () => {
+    if (!selected) return;
+    if (!confirm(`Excluir "${selected.nome}"?`)) return;
+    try {
+      await deleteModelo.mutateAsync(selected.id);
+      setVariantId(null);
+      toast.success("Variante excluída");
+    } catch (e) {
+      toast.error("Falha ao excluir", { description: (e as Error).message });
+    }
+  };
 
   return (
     <div className="pb-24">
@@ -86,7 +135,10 @@ function AutomacoesPage() {
               <label className="text-caption text-muted-foreground">Tipo</label>
               <select
                 value={tipo}
-                onChange={(e) => setTipo(e.target.value)}
+                onChange={(e) => {
+                  setTipo(e.target.value as ModeloTipo);
+                  setVariantId(null);
+                }}
                 className="mt-1 w-full h-10 rounded-xl border border-input bg-background px-3 text-body"
               >
                 {MODELO_TIPOS.map((t) => (
@@ -95,6 +147,47 @@ function AutomacoesPage() {
                   </option>
                 ))}
               </select>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between">
+                <label className="text-caption text-muted-foreground">
+                  Variante ({variants.length})
+                </label>
+                <div className="flex gap-2">
+                  {selected ? (
+                    <button
+                      onClick={handleExcluirVariante}
+                      className="h-8 px-2 rounded-lg text-caption text-destructive hover:bg-destructive/10 inline-flex items-center gap-1"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" /> Excluir
+                    </button>
+                  ) : null}
+                  <button
+                    onClick={handleNovaVariante}
+                    className="h-8 px-2 rounded-lg text-caption text-primary hover:bg-primary/10 inline-flex items-center gap-1"
+                  >
+                    <Plus className="h-3.5 w-3.5" /> Nova variante
+                  </button>
+                </div>
+              </div>
+              <select
+                value={variantId ?? ""}
+                onChange={(e) => setVariantId(e.target.value || null)}
+                className="mt-1 w-full h-10 rounded-xl border border-input bg-background px-3 text-body"
+              >
+                {variants.length === 0 ? (
+                  <option value="">Nenhuma variante</option>
+                ) : null}
+                {variants.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.nome} {v.ativo ? "" : "(inativa)"}
+                  </option>
+                ))}
+              </select>
+              <p className="text-caption text-muted-foreground mt-1">
+                O sistema sorteia aleatoriamente entre as variantes ativas a cada envio.
+              </p>
             </div>
 
             {draft ? (
@@ -115,7 +208,7 @@ function AutomacoesPage() {
               />
             ) : (
               <div className="text-caption text-muted-foreground">
-                Modelo não encontrado.
+                Sem variantes para este tipo. Clique em "Nova variante" para criar.
               </div>
             )}
           </div>
