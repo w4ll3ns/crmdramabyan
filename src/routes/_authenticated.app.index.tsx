@@ -137,29 +137,29 @@ function HomePage() {
           icon={MessageCircle}
           label="Conversas"
           hint="não lidas"
-          value={useUnreadCount()}
+          value={unread}
         />
         <StatTile
           to="/app/funil"
           icon={Sparkles}
           label="Leads novos"
           hint="últimos 7d"
-          value={useLeadsNovosCount().data ?? 0}
+          value={leadsNovos.data ?? 0}
         />
         <StatTile
           to="/app/funil"
           icon={Clock}
           label="Follow-ups"
           hint="atrasados"
-          value={useFollowupsAtrasadosCount().data ?? 0}
-          tone={(useFollowupsAtrasadosCount().data ?? 0) > 0 ? "warning" : "default"}
+          value={followups.data ?? 0}
+          tone={(followups.data ?? 0) > 0 ? "warning" : "default"}
         />
         <StatTile
           to="/app/pacientes"
           icon={Users}
           label="Pacientes"
           hint="ativos hoje"
-          value={useAConfirmarHojeCount()}
+          value={aConfirmar}
         />
       </section>
 
