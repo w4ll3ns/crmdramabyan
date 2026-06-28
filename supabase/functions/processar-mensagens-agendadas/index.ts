@@ -445,14 +445,26 @@ Deno.serve(async (req) => {
       } catch (e) {
         const msg = String((e as Error).message ?? e);
         const sb_hit = detectShadowban(msg);
-        await sb.from("mensagens_agendadas").update({
-          status: "falhou", erro: msg.slice(0, 500),
-        }).eq("id", m.id);
-        falhas++;
+        const erroTxt = msg.slice(0, 500);
         if (sb_hit) {
+          await sb.from("mensagens_agendadas").update({
+            status: "falhou", erro: erroTxt,
+          }).eq("id", m.id);
+          falhas++;
           shadowbanned = sb_hit;
           await ativarPausaAutoShadowban(sb, sb_hit);
           break;
+        }
+        if ((m.tentativas ?? 0) >= maxTent) {
+          await sb.from("mensagens_agendadas").update({
+            status: "falhou", erro: erroTxt,
+          }).eq("id", m.id);
+          falhas++;
+        } else {
+          const nova = new Date(Date.now() + backoffMsFor(m.tentativas ?? 1)).toISOString();
+          await sb.rpc("reagendar_mensagem", { _id: m.id, _nova: nova });
+          await sb.from("mensagens_agendadas").update({ erro: erroTxt }).eq("id", m.id);
+          reagendadas++;
         }
       }
 
