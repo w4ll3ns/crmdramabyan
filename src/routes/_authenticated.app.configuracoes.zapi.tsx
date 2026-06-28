@@ -20,9 +20,24 @@ type Instance = {
 
 type ZapiRemoteStatus = {
   connected?: boolean;
+  connectedPhone?: string | null;
   webhookConfigured?: boolean;
   receivedWebhookConfigured?: boolean;
   receiveCallbackSentByMe?: boolean;
+  webhooks?: {
+    received?: string;
+    delivery?: string;
+    status?: string;
+    connected?: string;
+    disconnected?: string;
+  };
+  webhookMatches?: {
+    received?: boolean;
+    delivery?: boolean;
+    status?: boolean;
+    connected?: boolean;
+    disconnected?: boolean;
+  };
 };
 
 async function fetchInstance(): Promise<Instance | null> {
@@ -205,16 +220,27 @@ function ZapiConfig() {
       { body: { action: "configure-webhook" } },
     );
     if (error) {
-      toast.error("Erro ao ativar recebimento", { description: error.message });
+      toast.error("Erro ao registrar webhooks", { description: error.message });
       return;
     }
-    toast.success("Recebimento de mensagens ativado");
+    toast.success("Webhooks registrados");
     qc.invalidateQueries({ queryKey: ["zapi-remote-status"] });
   }
 
-  const recebimentoAtivo = !!(
-    remoteStatus?.receivedWebhookConfigured || remoteStatus?.webhookConfigured
-  );
+  const webhooksOk = !!remoteStatus?.webhookConfigured;
+  const phoneFromRemote = remoteStatus?.connectedPhone ?? null;
+
+  return (
+    <div className="px-5 pt-5 pb-10 flex flex-col gap-5 max-w-xl mx-auto">
+      <div className="flex items-center gap-3">
+        <Smartphone className="h-6 w-6 text-primary" strokeWidth={1.5} />
+        <div>
+          <div className="text-h2">Z-API · WhatsApp</div>
+          <div className="text-caption text-muted-foreground">
+            Configure a instância exclusiva da clínica.
+          </div>
+        </div>
+      </div>
 
   return (
     <div className="px-5 pt-5 pb-10 flex flex-col gap-5 max-w-xl mx-auto">
