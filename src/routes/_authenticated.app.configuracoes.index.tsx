@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Zap, Smartphone, ChevronRight, Settings, ShieldAlert, Variable } from "lucide-react";
+import { Zap, Smartphone, ChevronRight, Settings, ShieldAlert, Variable, Building2 } from "lucide-react";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 
 export const Route = createFileRoute("/_authenticated/app/configuracoes/")({
@@ -37,6 +37,13 @@ function ConfiguracoesIndex() {
       ) : null}
 
       <div className="px-5 mt-4 grid gap-2">
+        <SettingsItem
+          to="/app/configuracoes/clinica"
+          icon={Building2}
+          title="Dados da clínica"
+          subtitle="Nome exibido nas mensagens."
+          adminOnly
+        />
         <SettingsItem
           to="/app/configuracoes/automacoes"
           icon={Zap}
