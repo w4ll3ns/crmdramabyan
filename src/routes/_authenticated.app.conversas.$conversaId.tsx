@@ -213,9 +213,14 @@ function ConversaDetail() {
     staleTime: 5_000,
   });
   const { data: modelos } = useQuery({
-    queryKey: ["mensagem_modelos"],
+    queryKey: ["modelos_mensagem", "ativos"],
     queryFn: fetchModelos,
     staleTime: 60_000,
+  });
+  const { data: nomeClinica } = useQuery({
+    queryKey: ["clinica_nome"],
+    queryFn: fetchNomeClinica,
+    staleTime: 5 * 60_000,
   });
 
   // Marca como lida ao abrir
