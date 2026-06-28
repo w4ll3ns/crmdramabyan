@@ -1,56 +1,43 @@
-## 1) Anti double-booking (DB trigger)
+## Migration: índices de performance
 
-Migration cria `check_agendamento_overlap()` (SECURITY DEFINER, `search_path=public`) + trigger BEFORE INSERT OR UPDATE em `agendamentos`:
+Criar uma única migration com índices `IF NOT EXISTS` nas tabelas e colunas indicadas. Todos B-tree padrão (sem `CONCURRENTLY` — migrations rodam em transação).
 
-- Considera ativos: `status IN ('agendado','confirmado')`. Ignora `cancelado/faltou/realizado`.
-- Mesmo `profissional` (comparação case-insensitive/trim).
-- Sobreposição: `tstzrange(NEW.data_hora, NEW.data_hora + (NEW.duracao_minutos||' min')::interval, '[)')` && o intervalo do existente.
-- `WHERE id <> NEW.id` no UPDATE.
-- `RAISE EXCEPTION USING ERRCODE='P0001', MESSAGE='Já existe um agendamento nesse horário para '||NEW.profissional||'.'`.
+```sql
+CREATE INDEX IF NOT EXISTS agendamentos_data_hora_idx
+  ON public.agendamentos (data_hora);
 
-Frontend: `AgendamentoSheet.tsx` já faz `toast.error(e?.message ?? ...)`. Mapeio mensagens conhecidas a textos amigáveis (sufixo "para {profissional}." já vem da exceção). Sem mudar fluxo do sheet — apenas garantir que erro do Supabase preserva `message`.
+CREATE INDEX IF NOT EXISTS agendamentos_paciente_aguardando_idx
+  ON public.agendamentos (paciente_id, aguardando_confirmacao);
 
-## 2) Expediente + bloqueios
+CREATE INDEX IF NOT EXISTS oportunidades_etapa_idx
+  ON public.oportunidades (etapa);
 
-**Migration:**
-- Insert `settings.agenda_expediente` (jsonb):  
-  `{"seg":["08:00","18:00"],"ter":[...],"qua":[...],"qui":[...],"sex":[...],"sab":null,"dom":null}`.
-- Tabela `agenda_bloqueios`:  
-  `id uuid pk, data date not null, motivo text, dia_inteiro boolean default true, inicio time, fim time, created_at, updated_at`.
-- GRANTs (authenticated + service_role), RLS:
-  - SELECT: qualquer authenticated.
-  - INSERT/UPDATE/DELETE: `has_role(auth.uid(),'admin')`.
-- Trigger `agendamento_horario_valido()` BEFORE INSERT/UPDATE (roda antes do overlap):
-  - Calcula dia da semana em America/Fortaleza, lê expediente; se `null` → exceção "Fora do expediente".
-  - Verifica `agenda_bloqueios` na data; se `dia_inteiro` ou faixa horária colide → "Data/horário bloqueado: {motivo}".
-  - Override admin: pular validação se `current_setting('app.bypass_horario', true) = 'on'` **OU** se sessão tem role admin (via `has_role(auth.uid(),'admin')` E uma flag `forcar` — implemento sem override por padrão; documento como opcional, não exposto na UI nesta etapa).
+CREATE INDEX IF NOT EXISTS oportunidades_status_idx
+  ON public.oportunidades (status);
 
-**UI Configurações:**
-- Nova rota `/_authenticated/app/configuracoes/agenda` (item no index "Agenda — expediente e bloqueios", admin).
-- Edita `agenda_expediente` (7 dias com switch + dois time inputs) e lista/CRUD de `agenda_bloqueios`.
+CREATE INDEX IF NOT EXISTS oportunidades_paciente_idx
+  ON public.oportunidades (paciente_id);
 
-**Validação cliente (AgendamentoSheet):** apenas confia no erro do trigger e exibe via toast. Não duplico lógica no cliente nesta etapa (evita drift).
+CREATE INDEX IF NOT EXISTS tasks_status_idx
+  ON public.tasks (status);
 
-## 3) Encaixe <12h: lembrete imediato
+CREATE INDEX IF NOT EXISTS tasks_paciente_idx
+  ON public.tasks (paciente_id);
 
-Edito `trg_agendamento_after_insert` (nova migration CREATE OR REPLACE):
+CREATE INDEX IF NOT EXISTS tasks_responsavel_interno_idx
+  ON public.tasks (responsavel_interno_id);
 
-- Após bloco de confirmação, se nada foi enfileirado por estar dentro de `antecedencia_horas_minimo` (ou seja, `NEW.data_hora <= now() + (antec_horas||' h')::interval`), enfileira um lembrete imediato:
-  - `envio := now() + interval '2 minutes'`, desde que `< NEW.data_hora`.
-  - Usa `enfileirar_automacao(... 'lembrete'::modelo_tipo, envio, NEW.id, '{}'::jsonb, 'lembrete_encaixe', NEW.id)` — chave de idempotência distinta de `lembrete` normal.
-  - `enfileirar_automacao` já respeita `aceita_automacoes` e pausa global; a janela horária é aplicada no processador.
-- Lembrete N-horas-antes continua agendado normalmente (mesmo se cair antes do encaixe, ele já não roda pois `lembrete_em < now()` é filtrado).
+CREATE INDEX IF NOT EXISTS mensagens_agendadas_status_enviada_em_idx
+  ON public.mensagens_agendadas (status, enviada_em);
+```
 
-## Aceite
+## Validação
 
-- Conflito mesmo profissional → exceção amigável; horário livre OK.
-- Fora do expediente ou em bloqueio → bloqueado; Configurações → Agenda permite editar.
-- Insert com `data_hora` em <12h → uma linha em `mensagens_agendadas` tipo `lembrete`, `agendado_para ≈ now()+2min`, idempotência `lembrete_encaixe`, respeitando opt-out.
+- `SELECT indexname FROM pg_indexes WHERE schemaname='public' AND indexname IN (...)` confirma os 9 índices.
+- `EXPLAIN` em uma query típica do processador (`WHERE status='enviada' AND enviada_em > now() - interval '5 minutes'`) deve usar `mensagens_agendadas_status_enviada_em_idx` (Index/Bitmap Scan, sem Seq Scan).
+- `EXPLAIN` na query da Agenda (`WHERE data_hora BETWEEN ... AND ...`) usa `agendamentos_data_hora_idx`.
 
-## Arquivos
+## Observações
 
-- `supabase/migrations/<ts>_agenda_overlap_expediente_encaixe.sql` (trigger overlap, tabela bloqueios + RLS/GRANTs, settings expediente, novo trigger after_insert com encaixe).
-- `src/routes/_authenticated.app.configuracoes.agenda.tsx` (nova tela).
-- `src/routes/_authenticated.app.configuracoes.index.tsx` (novo item).
-- `src/hooks/useAgendaConfig.ts` (queries/mutations expediente + bloqueios).
-- `src/components/agenda/AgendamentoSheet.tsx` (mapeamento de mensagens de erro, mínimo).
+- Confirmo previamente que `responsavel_interno_id` existe em `tasks` e `aguardando_confirmacao` em `agendamentos` lendo o schema antes de aplicar; se algum nome divergir, ajusto o nome da coluna na migration mantendo o restante.
+- Não removo nem renomeio índices existentes.
