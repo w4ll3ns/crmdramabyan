@@ -78,15 +78,27 @@ async function fetchMessages(id: string): Promise<Message[]> {
   return (data ?? []) as Message[];
 }
 
-async function fetchModelos(): Promise<string[]> {
+type ModeloItem = { id: string; nome: string; tipo: string; corpo: string };
+
+async function fetchModelos(): Promise<ModeloItem[]> {
+  const { data, error } = await supabase
+    .from("modelos_mensagem")
+    .select("id, nome, tipo, corpo")
+    .eq("ativo", true)
+    .order("tipo", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as ModeloItem[];
+}
+
+async function fetchNomeClinica(): Promise<string> {
   const { data } = await supabase
     .from("settings")
     .select("valor")
-    .eq("chave", "mensagem_modelos")
+    .eq("chave", "clinica_nome")
     .maybeSingle();
-  const valor = data?.valor as unknown;
-  if (Array.isArray(valor)) return valor as string[];
-  return [];
+  const v = data?.valor as unknown;
+  if (typeof v === "string") return v;
+  return "";
 }
 
 function StatusIcon({ status }: { status: string | null }) {
