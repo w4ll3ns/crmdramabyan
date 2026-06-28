@@ -11,9 +11,23 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { downloadMedia, filenameFromUrl } from "@/lib/downloadMedia";
 import { cn } from "@/lib/utils";
 
+const UNSUPPORTED_IMAGE_EXT = ["heic", "heif", "tif", "tiff"];
+
+function isUnsupportedImage(name: string) {
+  const i = name.lastIndexOf(".");
+  if (i < 0) return false;
+  return UNSUPPORTED_IMAGE_EXT.includes(name.slice(i + 1).toLowerCase());
+}
+
 export function ImageMessage({ src, filename }: { src: string; filename?: string }) {
   const [open, setOpen] = useState(false);
+  const [failed, setFailed] = useState(false);
   const name = filename || filenameFromUrl(src, "imagem");
+
+  if (failed || isUnsupportedImage(name)) {
+    return <DocumentMessage src={src} filename={name} caption={null} />;
+  }
+
   return (
     <>
       <button
@@ -25,6 +39,7 @@ export function ImageMessage({ src, filename }: { src: string; filename?: string
           src={src}
           alt={name}
           loading="lazy"
+          onError={() => setFailed(true)}
           className="max-h-72 w-full object-cover"
         />
         <span className="absolute bottom-2 right-2 flex h-7 w-7 items-center justify-center rounded-full bg-black/55 text-white opacity-90 group-hover:opacity-100">
