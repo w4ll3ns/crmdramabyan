@@ -9,11 +9,14 @@ import { PainelMetricas } from "@/components/automacoes/PainelMetricas";
 import {
   useModelos,
   useUpdateModelo,
+  useCreateModelo,
+  useDeleteModelo,
   type Modelo,
 } from "@/hooks/useMensagens";
-import { MODELO_TIPOS } from "@/lib/templates";
+import { MODELO_TIPOS, type ModeloTipo } from "@/lib/templates";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { toast } from "sonner";
+import { Plus, Trash2 } from "lucide-react";
 
 type Tab = "reguas" | "modelos" | "janela" | "metricas";
 
