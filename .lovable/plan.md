@@ -1,83 +1,91 @@
-# Schema completo Dra. Mabyan CRM no Lovable Cloud
+# Conversas + Integração Z-API
 
-Criação de schema completo com enums, tabelas, RLS, triggers e seed do catálogo, em uma única migration.
+Implementar inbox de WhatsApp completo com envio/recebimento real via Z-API, realtime e configuração admin.
 
-## 1. Enums (CREATE TYPE)
+## 1. Migration — Realtime + índice
 
-- `app_role`: admin, atendente
-- `origem_type`: instagram, indicacao, google, tiktok, site, anuncio_meta, whatsapp, passou_em_frente, outro
-- `etapa_funil`: novo_lead, primeiro_contato, avaliacao_agendada, avaliacao_realizada, orcamento_enviado, negociacao, procedimento_agendado, cliente, pos_procedimento, perdido
-- `oportunidade_status`: aberta, ganha, perdida
-- `conversation_status`: nao_lida, em_atendimento, aguardando, resolvida, arquivada
-- `message_direction`: inbound, outbound
-- `message_type`: text, image, audio, video, document
-- `agendamento_tipo`: avaliacao, procedimento, retorno
-- `agendamento_status`: agendado, confirmado, realizado, faltou, cancelado
-- `task_status`: pendente, em_andamento, concluida, cancelada
-- `task_priority`: baixa, media, alta, urgente
-- `temperatura_type`: quente, morno, frio (em vez de CHECK, para consistência)
+- `ALTER PUBLICATION supabase_realtime ADD TABLE public.messages, public.conversations;`
+- `ALTER TABLE public.messages REPLICA IDENTITY FULL;` (mesmo para `conversations`).
+- Índices: `conversations(ultima_mensagem_em DESC)`, `messages(conversation_id, created_at)`.
+- Settings seed: linha `chave='mensagem_modelos'` com array vazio (admin edita depois).
 
-## 2. Helpers de segurança
+## 2. Secret — Z-API webhook
 
-- `public.update_updated_at_column()` — trigger genérico de `updated_at`.
-- `public.has_role(_user_id uuid, _role app_role) returns boolean` — SECURITY DEFINER, `search_path=public`, lê de `user_roles`. Usado em todas as policies de admin (evita recursão).
-- `public.handle_new_user()` — trigger AFTER INSERT em `auth.users` que cria linha em `public.profiles` (id, email, name a partir de `raw_user_meta_data`).
+`generate_secret` para `ZAPI_WEBHOOK_TOKEN` (validar nas requests do webhook via query `?token=`). `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_URL` já existem.
 
-## 3. Tabelas (todas em `public`, com `id uuid default gen_random_uuid()`, `created_at`/`updated_at timestamptz default now()`)
+## 3. Edge functions (Supabase) — necessárias porque Z-API chama webhook externo e a URL deve viver no domínio de funções estável
 
-Operacionais (autenticados leem/escrevem):
-- `profiles` (id = auth.users.id, name, email, phone, avatar_url, active bool default true)
-- `user_roles` (user_id → auth.users, role app_role, UNIQUE(user_id, role))
-- `pacientes`, `oportunidades`, `agendamentos`, `conversations`, `messages`, `tasks`, `webhook_events`
+Lovable Cloud expõe edge functions com URL pública estável; a Z-API precisa de uma URL fixa para callback. Mantemos a regra: app-internal usa server fns, externo (webhook Z-API) usa edge function.
 
-Catálogo / config (somente admin escreve, autenticados leem):
-- `procedimentos`, `zapi_instances`, `settings` (chave text unique, valor jsonb), `audit_logs` (somente admin lê/escreve)
+- `zapi-instance-manager` (GET/POST, autenticada, admin-only via JWT + has_role): ações `status`, `qr-code`, `disconnect`, `restart`. Lê instância ativa de `zapi_instances` e chama API da Z-API correspondente.
+- `zapi-send` (POST, autenticada): body `{ conversation_id, type, content, media_url? }`. Resolve telefone via conversa, chama Z-API `/send-text` ou `/send-image|audio|document`, insere `messages` com `direction='outbound'`, atualiza `conversations.ultima_mensagem_em`.
+- `zapi-webhook` (POST, `verify_jwt=false`, pública): valida `?token=`, normaliza payload Z-API (message received / status update), faz upsert de `pacientes` por telefone, upsert de `conversations`, insere `messages` com `direction='inbound'`, marca `status='nao_lida'`. Suporta eventos `received`, `delivery`, `read` para atualizar `status` da mensagem por `external_message_id`. Loga payload em `webhook_events`.
 
-Todas as FKs entre tabelas do domínio usam `ON DELETE` apropriado (SET NULL para opcionais, CASCADE para `messages.conversation_id`).
+`supabase/config.toml`: adicionar bloco `[functions.zapi-webhook] verify_jwt = false` (as outras herdam o default Lovable de `verify_jwt = false` também, mas como chamamos com bearer da sessão elas funcionam normalmente).
 
-## 4. RLS (estrutura padrão por tabela)
+## 4. Server functions (TanStack)
 
-Para cada tabela: `GRANT SELECT, INSERT, UPDATE, DELETE ... TO authenticated; GRANT ALL ... TO service_role;` depois `ENABLE ROW LEVEL SECURITY` e policies:
+`src/lib/conversas.functions.ts`:
+- `listConversas({ filter, search })` → ordena por `ultima_mensagem_em desc`, conta não lidas (`messages` inbound com status null).
+- `getConversa(id)` → conversa + paciente + mensagens (paginadas, últimas 100).
+- `markConversaLida(id)` → marca conversa `em_atendimento` e mensagens inbound como lidas.
+- `setEtapaFunil({ oportunidade_id, etapa })`.
 
-- **Operacionais** (profiles, pacientes, oportunidades, agendamentos, conversations, messages, tasks, webhook_events):
-  - SELECT/INSERT/UPDATE/DELETE: `authenticated` com `using (true)` / `with check (true)` (CRM interno; qualquer membro autenticado pode operar).
-  - Exceção `profiles`: UPDATE só do próprio registro ou admin; DELETE só admin.
-  - Exceção `user_roles`: SELECT autenticado; INSERT/UPDATE/DELETE só admin (`has_role(auth.uid(),'admin')`).
-- **Catálogo/config** (procedimentos, zapi_instances, settings):
-  - SELECT: authenticated.
-  - INSERT/UPDATE/DELETE: somente admin via `has_role`.
-- **audit_logs**: SELECT/INSERT/UPDATE/DELETE somente admin.
+`src/lib/zapi.functions.ts` (admin):
+- `getZapiInstanceAtiva()`, `upsertZapiInstance(...)`, `getZapiStatus()`, `getZapiQrCode()`, `disconnectZapi()` — wrappers para a edge function `zapi-instance-manager`.
 
-Sem grants ao `anon` em nenhuma tabela.
+Envio de mensagem chama diretamente `supabase.functions.invoke('zapi-send', ...)` no client (já tem bearer).
 
-## 5. Triggers
+## 5. UI
 
-- `update_updated_at_column` BEFORE UPDATE em: profiles, pacientes, procedimentos, oportunidades, agendamentos, conversations, tasks, zapi_instances, settings.
-- `handle_new_user` AFTER INSERT em `auth.users` → cria `profiles`.
+**`/app/conversas` (lista)** — substitui placeholder:
+- Header com busca (nome/telefone) e `SegmentedControl` (Não lidas / Em atendimento / Todas).
+- Lista de `ListRow` com `Avatar` (inicial do nome), nome, prévia da última msg, horário (relativo: "agora", "14:32", "ontem", "12/06"), badge dourado de não lidas.
+- `useSuspenseQuery` + canal realtime em `messages` para invalidar query.
+- Empty state quando vazio.
 
-## 6. Seed do catálogo de procedimentos
+**`/app/conversas/$id` (detalhe — nova rota `_authenticated.app.conversas.$id.tsx`)**:
+- Tela cheia mobile (esconde BottomNav nesta rota via flag no `AppShell`).
+- Header: botão voltar, avatar+nome (link → ficha do paciente), menu kebab (`BottomSheet`): "Agendar avaliação", "Criar tarefa", "Mover etapa do funil".
+- Área de mensagens scroll reverso: bolhas
+  - inbound: branco, borda sutil, alinhadas à esquerda.
+  - outbound: champanhe claro (`bg-primary/15` via token), alinhadas à direita, com horário + ícone de status (✓ enviado, ✓✓ entregue, ✓✓ azul=lido).
+  - Suporte a `type`: text (texto), image (img clicável), audio (`<audio controls>`), document (chip com nome + download).
+- Input fixo bottom (safe-area-inset-bottom): textarea auto-grow, botão paperclip (anexos — modal simples com URL por ora ou upload futuro), botão "Modelo" abre `BottomSheet` com modelos de `settings.mensagem_modelos`, atalho "Agendar" navega para nova avaliação pré-preenchida, botão enviar dourado circular.
+- Realtime: subscribe a `messages` filtrado por `conversation_id`; auto-scroll ao chegar nova.
+- Ao montar: dispara `markConversaLida`.
 
-`INSERT INTO procedimentos (nome, categoria, retorno_dias, recorrencia_dias, ativo) VALUES ...` com a lista fornecida:
+**Badge no BottomNav de Conversas**: hook `useUnreadCount` no `AppShell` consulta `conversations` com não lidas, subscribe realtime em `conversations` para reatualizar; passa contagem para item "Conversas".
 
-| Nome | retorno_dias | recorrencia_dias |
-|---|---|---|
-| Toxina Botulínica | 15 | 120 |
-| Preenchimento Labial | – | 300 |
-| Preenchimento Facial | – | 365 |
-| Bioestimulador de Colágeno | – | 365 |
-| Fios de Sustentação | – | 540 |
-| Skinbooster | – | 90 |
-| Microagulhamento | – | 30 |
-| Peeling Químico | – | 30 |
-| Limpeza de Pele | – | 30 |
-| Harmonização Facial Completa | – | – |
-| Lipo de Papada (enzimas) | – | – |
-| Botox Capilar | – | – |
+**`/app/configuracoes/zapi` (nova rota, admin-only)**:
+- Form: nome_instancia, instance_id, token, client_token, phone_number (todos em branco para o usuário preencher).
+- Botão "Conectar" → chama `zapi-instance-manager?action=qr-code` e mostra QR (img base64 retornado pela Z-API). Polling a cada 3s do status até `connected=true`.
+- Botão "Desconectar". Card de status conectado (com phone_number + reset).
+- Acesso bloqueado a não-admin (checa `has_role` via server fn).
 
-Idempotente via `ON CONFLICT (nome) DO NOTHING` (adiciono UNIQUE em `procedimentos.nome`).
+## 6. Realtime wiring
 
-## 7. Entrega
+- Lista: canal `conversas-list` em `conversations` (UPDATE/INSERT) → `queryClient.invalidateQueries(['conversas'])`.
+- Detalhe: canal `conversa-${id}-msgs` em `messages` filtrado por `conversation_id=eq.${id}` → append à lista.
+- Badge: canal `conversas-unread` em `conversations` → recalcula.
 
-Uma única chamada `supabase--migration` com todo o SQL acima na ordem: enums → helpers → tabelas (cada uma com GRANT → RLS → policies) → triggers → seed. Após aprovação e regeneração de `src/integrations/supabase/types.ts`, o frontend já passa a ter os tipos prontos para integrar nas próximas telas (sem alteração de código nesta etapa).
+Todos dentro de `useEffect` com cleanup, como o knowledge prescreve.
 
-Critérios de aceite atendidos: todas as tabelas com RLS; `has_role()` criado; seed do catálogo aplicado; trigger `handle_new_user` cria profile no signup.
+## 7. Critérios de aceite mapeados
+
+- Inbox lista + filtros + busca ✅ (passo 5 lista)
+- Conversa detalhe full-screen com bolhas, status, mídia ✅ (passo 5 detalhe)
+- Input com anexo/modelo/agendar/enviar ✅
+- Z-API enviar (zapi-send) + receber (zapi-webhook) ✅
+- Criação automática de paciente/conversa via webhook ✅
+- Realtime + badge no BottomNav ✅
+- Configuração admin com QR + status ✅
+- Instância em branco ✅
+
+## 8. Itens fora deste escopo (entrego em chat se o usuário quiser depois)
+
+- Upload real de mídia para Storage (por ora aceita URL no input de anexo).
+- Editor de modelos de mensagem (criar/editar) — listagem e uso já entram; CRUD fica para próxima.
+- Templates HSM/oficiais — Z-API normal só envia para conversas dentro de 24h.
+
+Pergunto antes de codar:
