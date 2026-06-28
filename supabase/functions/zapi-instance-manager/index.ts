@@ -37,7 +37,18 @@ Deno.serve(async (req) => {
       });
 
     const url = new URL(req.url);
-    const action = url.searchParams.get("action") ?? "status";
+    let action = url.searchParams.get("action");
+    let phoneParam: string | null = url.searchParams.get("phone");
+    if (!action && (req.method === "POST" || req.method === "PUT")) {
+      try {
+        const body = await req.json();
+        action = body?.action ?? null;
+        phoneParam = body?.phone ?? phoneParam;
+      } catch {
+        // sem body
+      }
+    }
+    if (!action) action = "status";
 
     const instance = await getActiveInstance();
     if (!instance) {
