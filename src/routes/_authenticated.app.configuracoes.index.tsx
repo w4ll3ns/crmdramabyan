@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Zap, Smartphone, ChevronRight, Settings, ShieldAlert } from "lucide-react";
+import { Zap, Smartphone, ChevronRight, Settings, ShieldAlert, Variable } from "lucide-react";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 
 export const Route = createFileRoute("/_authenticated/app/configuracoes/")({
@@ -50,6 +50,12 @@ function ConfiguracoesIndex() {
           title="WhatsApp (Z-API)"
           subtitle="Conexão, instância e webhooks."
           adminOnly
+        />
+        <SettingsItem
+          to="/app/configuracoes/variaveis"
+          icon={Variable}
+          title="Variáveis"
+          subtitle="Catálogo de variáveis usadas nos modelos."
         />
       </div>
     </>
