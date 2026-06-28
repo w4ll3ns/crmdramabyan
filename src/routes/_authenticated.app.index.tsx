@@ -25,12 +25,21 @@ function HomePage() {
 
   return (
     <>
-      <section className="px-5 pt-6 pb-2">
-        <p className="text-caption text-muted-foreground">Bom dia,</p>
-        <h1 className="text-display text-foreground mt-1">{name}</h1>
-        <p className="text-caption text-muted-foreground mt-2 max-w-xs">
-          Tudo pronto para o seu dia. Aqui está um resumo.
-        </p>
+      <section className="px-5 pt-6 pb-2 flex items-start justify-between gap-3">
+        <div>
+          <p className="text-caption text-muted-foreground">Bom dia,</p>
+          <h1 className="text-display text-foreground mt-1">{name}</h1>
+          <p className="text-caption text-muted-foreground mt-2 max-w-xs">
+            Tudo pronto para o seu dia. Aqui está um resumo.
+          </p>
+        </div>
+        <Link
+          to="/app/configuracoes"
+          aria-label="Configurações"
+          className="h-10 w-10 rounded-full bg-card shadow-soft flex items-center justify-center text-foreground shrink-0"
+        >
+          <Settings className="h-5 w-5" strokeWidth={1.5} />
+        </Link>
       </section>
 
       <section className="px-5 pt-3 grid grid-cols-2 gap-3">
