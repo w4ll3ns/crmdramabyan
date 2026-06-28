@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Zap, Smartphone, ChevronRight, Settings, ShieldAlert, Variable, Building2 } from "lucide-react";
+import { Zap, Smartphone, ChevronRight, Settings, ShieldAlert, Variable, Building2, CalendarDays } from "lucide-react";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 
 export const Route = createFileRoute("/_authenticated/app/configuracoes/")({
@@ -42,6 +42,13 @@ function ConfiguracoesIndex() {
           icon={Building2}
           title="Dados da clínica"
           subtitle="Nome exibido nas mensagens."
+          adminOnly
+        />
+        <SettingsItem
+          to="/app/configuracoes/agenda"
+          icon={CalendarDays}
+          title="Agenda"
+          subtitle="Expediente, bloqueios e feriados."
           adminOnly
         />
         <SettingsItem

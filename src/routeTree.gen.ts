@@ -28,6 +28,7 @@ import { Route as AuthenticatedAppConfiguracoesZapiRouteImport } from './routes/
 import { Route as AuthenticatedAppConfiguracoesVariaveisRouteImport } from './routes/_authenticated.app.configuracoes.variaveis'
 import { Route as AuthenticatedAppConfiguracoesClinicaRouteImport } from './routes/_authenticated.app.configuracoes.clinica'
 import { Route as AuthenticatedAppConfiguracoesAutomacoesRouteImport } from './routes/_authenticated.app.configuracoes.automacoes'
+import { Route as AuthenticatedAppConfiguracoesAgendaRouteImport } from './routes/_authenticated.app.configuracoes.agenda'
 
 const StyleRoute = StyleRouteImport.update({
   id: '/style',
@@ -133,6 +134,12 @@ const AuthenticatedAppConfiguracoesAutomacoesRoute =
     path: '/configuracoes/automacoes',
     getParentRoute: () => AuthenticatedAppRoute,
   } as any)
+const AuthenticatedAppConfiguracoesAgendaRoute =
+  AuthenticatedAppConfiguracoesAgendaRouteImport.update({
+    id: '/configuracoes/agenda',
+    path: '/configuracoes/agenda',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -144,6 +151,7 @@ export interface FileRoutesByFullPath {
   '/app/funil': typeof AuthenticatedAppFunilRoute
   '/app/pacientes': typeof AuthenticatedAppPacientesRouteWithChildren
   '/app/': typeof AuthenticatedAppIndexRoute
+  '/app/configuracoes/agenda': typeof AuthenticatedAppConfiguracoesAgendaRoute
   '/app/configuracoes/automacoes': typeof AuthenticatedAppConfiguracoesAutomacoesRoute
   '/app/configuracoes/clinica': typeof AuthenticatedAppConfiguracoesClinicaRoute
   '/app/configuracoes/variaveis': typeof AuthenticatedAppConfiguracoesVariaveisRoute
@@ -163,6 +171,7 @@ export interface FileRoutesByTo {
   '/app/funil': typeof AuthenticatedAppFunilRoute
   '/app/pacientes': typeof AuthenticatedAppPacientesRouteWithChildren
   '/app': typeof AuthenticatedAppIndexRoute
+  '/app/configuracoes/agenda': typeof AuthenticatedAppConfiguracoesAgendaRoute
   '/app/configuracoes/automacoes': typeof AuthenticatedAppConfiguracoesAutomacoesRoute
   '/app/configuracoes/clinica': typeof AuthenticatedAppConfiguracoesClinicaRoute
   '/app/configuracoes/variaveis': typeof AuthenticatedAppConfiguracoesVariaveisRoute
@@ -185,6 +194,7 @@ export interface FileRoutesById {
   '/_authenticated/app/funil': typeof AuthenticatedAppFunilRoute
   '/_authenticated/app/pacientes': typeof AuthenticatedAppPacientesRouteWithChildren
   '/_authenticated/app/': typeof AuthenticatedAppIndexRoute
+  '/_authenticated/app/configuracoes/agenda': typeof AuthenticatedAppConfiguracoesAgendaRoute
   '/_authenticated/app/configuracoes/automacoes': typeof AuthenticatedAppConfiguracoesAutomacoesRoute
   '/_authenticated/app/configuracoes/clinica': typeof AuthenticatedAppConfiguracoesClinicaRoute
   '/_authenticated/app/configuracoes/variaveis': typeof AuthenticatedAppConfiguracoesVariaveisRoute
@@ -207,6 +217,7 @@ export interface FileRouteTypes {
     | '/app/funil'
     | '/app/pacientes'
     | '/app/'
+    | '/app/configuracoes/agenda'
     | '/app/configuracoes/automacoes'
     | '/app/configuracoes/clinica'
     | '/app/configuracoes/variaveis'
@@ -226,6 +237,7 @@ export interface FileRouteTypes {
     | '/app/funil'
     | '/app/pacientes'
     | '/app'
+    | '/app/configuracoes/agenda'
     | '/app/configuracoes/automacoes'
     | '/app/configuracoes/clinica'
     | '/app/configuracoes/variaveis'
@@ -247,6 +259,7 @@ export interface FileRouteTypes {
     | '/_authenticated/app/funil'
     | '/_authenticated/app/pacientes'
     | '/_authenticated/app/'
+    | '/_authenticated/app/configuracoes/agenda'
     | '/_authenticated/app/configuracoes/automacoes'
     | '/_authenticated/app/configuracoes/clinica'
     | '/_authenticated/app/configuracoes/variaveis'
@@ -402,6 +415,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppConfiguracoesAutomacoesRouteImport
       parentRoute: typeof AuthenticatedAppRoute
     }
+    '/_authenticated/app/configuracoes/agenda': {
+      id: '/_authenticated/app/configuracoes/agenda'
+      path: '/configuracoes/agenda'
+      fullPath: '/app/configuracoes/agenda'
+      preLoaderRoute: typeof AuthenticatedAppConfiguracoesAgendaRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
   }
 }
 
@@ -425,6 +445,7 @@ interface AuthenticatedAppRouteChildren {
   AuthenticatedAppFunilRoute: typeof AuthenticatedAppFunilRoute
   AuthenticatedAppPacientesRoute: typeof AuthenticatedAppPacientesRouteWithChildren
   AuthenticatedAppIndexRoute: typeof AuthenticatedAppIndexRoute
+  AuthenticatedAppConfiguracoesAgendaRoute: typeof AuthenticatedAppConfiguracoesAgendaRoute
   AuthenticatedAppConfiguracoesAutomacoesRoute: typeof AuthenticatedAppConfiguracoesAutomacoesRoute
   AuthenticatedAppConfiguracoesClinicaRoute: typeof AuthenticatedAppConfiguracoesClinicaRoute
   AuthenticatedAppConfiguracoesVariaveisRoute: typeof AuthenticatedAppConfiguracoesVariaveisRoute
@@ -439,6 +460,8 @@ const AuthenticatedAppRouteChildren: AuthenticatedAppRouteChildren = {
   AuthenticatedAppFunilRoute: AuthenticatedAppFunilRoute,
   AuthenticatedAppPacientesRoute: AuthenticatedAppPacientesRouteWithChildren,
   AuthenticatedAppIndexRoute: AuthenticatedAppIndexRoute,
+  AuthenticatedAppConfiguracoesAgendaRoute:
+    AuthenticatedAppConfiguracoesAgendaRoute,
   AuthenticatedAppConfiguracoesAutomacoesRoute:
     AuthenticatedAppConfiguracoesAutomacoesRoute,
   AuthenticatedAppConfiguracoesClinicaRoute:

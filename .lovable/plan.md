@@ -1,99 +1,56 @@
-## Retry com backoff em `processar-mensagens-agendadas`
+## 1) Anti double-booking (DB trigger)
 
-### 1. Setting nova
-Inserir via `supabase--insert` (não migration, é dado):
-```sql
-INSERT INTO public.settings (chave, valor)
-VALUES ('automacoes_max_tentativas', '3'::jsonb)
-ON CONFLICT (chave) DO NOTHING;
-```
+Migration cria `check_agendamento_overlap()` (SECURITY DEFINER, `search_path=public`) + trigger BEFORE INSERT OR UPDATE em `agendamentos`:
 
-### 2. Mudança na edge function `supabase/functions/processar-mensagens-agendadas/index.ts`
+- Considera ativos: `status IN ('agendado','confirmado')`. Ignora `cancelado/faltou/realizado`.
+- Mesmo `profissional` (comparação case-insensitive/trim).
+- Sobreposição: `tstzrange(NEW.data_hora, NEW.data_hora + (NEW.duracao_minutos||' min')::interval, '[)')` && o intervalo do existente.
+- `WHERE id <> NEW.id` no UPDATE.
+- `RAISE EXCEPTION USING ERRCODE='P0001', MESSAGE='Já existe um agendamento nesse horário para '||NEW.profissional||'.'`.
 
-**Ler a setting** junto com as outras no topo:
-```ts
-const maxTent = clampInt(Number(getSetting<number>(rows, "automacoes_max_tentativas", 3)), 1, 10);
-```
+Frontend: `AgendamentoSheet.tsx` já faz `toast.error(e?.message ?? ...)`. Mapeio mensagens conhecidas a textos amigáveis (sufixo "para {profissional}." já vem da exceção). Sem mudar fluxo do sheet — apenas garantir que erro do Supabase preserva `message`.
 
-**Helper de backoff** (constante no arquivo):
-```ts
-const BACKOFF_MIN = [10, 30, 60]; // minutos para tentativa 1, 2, 3...
-function backoffMsFor(tent: number): number {
-  const i = Math.max(0, Math.min(tent - 1, BACKOFF_MIN.length - 1));
-  return BACKOFF_MIN[i] * 60 * 1000;
-}
-```
+## 2) Expediente + bloqueios
 
-**No loop, isolar a "falha transitória"** (não-shadowban). Hoje há 2 caminhos que marcam `falhou`:
-- `!resp.ok || sb_hit` (resposta da Z-API)
-- `catch (e)` (exceção de rede)
+**Migration:**
+- Insert `settings.agenda_expediente` (jsonb):  
+  `{"seg":["08:00","18:00"],"ter":[...],"qua":[...],"qui":[...],"sex":[...],"sab":null,"dom":null}`.
+- Tabela `agenda_bloqueios`:  
+  `id uuid pk, data date not null, motivo text, dia_inteiro boolean default true, inicio time, fim time, created_at, updated_at`.
+- GRANTs (authenticated + service_role), RLS:
+  - SELECT: qualquer authenticated.
+  - INSERT/UPDATE/DELETE: `has_role(auth.uid(),'admin')`.
+- Trigger `agendamento_horario_valido()` BEFORE INSERT/UPDATE (roda antes do overlap):
+  - Calcula dia da semana em America/Fortaleza, lê expediente; se `null` → exceção "Fora do expediente".
+  - Verifica `agenda_bloqueios` na data; se `dia_inteiro` ou faixa horária colide → "Data/horário bloqueado: {motivo}".
+  - Override admin: pular validação se `current_setting('app.bypass_horario', true) = 'on'` **OU** se sessão tem role admin (via `has_role(auth.uid(),'admin')` E uma flag `forcar` — implemento sem override por padrão; documento como opcional, não exposto na UI nesta etapa).
 
-Refatorar ambos: se `sb_hit` (shadowban), manter o comportamento atual (`falhou` + `ativarPausaAutoShadowban` + `break`). Se for falha transitória:
+**UI Configurações:**
+- Nova rota `/_authenticated/app/configuracoes/agenda` (item no index "Agenda — expediente e bloqueios", admin).
+- Edita `agenda_expediente` (7 dias com switch + dois time inputs) e lista/CRUD de `agenda_bloqueios`.
 
-```ts
-const erroTxt = (errorText || `zapi ${resp.status}`).slice(0, 500);
-if (m.tentativas >= maxTent) {
-  await sb.from("mensagens_agendadas").update({
-    status: "falhou", erro: erroTxt,
-  }).eq("id", m.id);
-  falhas++;
-} else {
-  const nova = new Date(Date.now() + backoffMsFor(m.tentativas)).toISOString();
-  await sb.rpc("reagendar_mensagem", { _id: m.id, _nova: nova });
-  await sb.from("mensagens_agendadas").update({ erro: erroTxt }).eq("id", m.id);
-  reagendadas++;
-}
-continue;
-```
+**Validação cliente (AgendamentoSheet):** apenas confia no erro do trigger e exibe via toast. Não duplico lógica no cliente nesta etapa (evita drift).
 
-Aplicar o mesmo padrão no `catch`. Atenção: `reagendar_mensagem` já volta status para `pendente` e não toca em `tentativas` (o incremento vem do `claim_mensagens_pendentes`), então o contador segue evoluindo a cada retentativa.
+## 3) Encaixe <12h: lembrete imediato
 
-Falhas pré-envio que **não** são transitórias (paciente inexistente, opt-out, conteúdo vazio, telefone vazio, sem instância Z-API) **continuam** marcando `falhou`/`cancelada` direto — não fazem sentido reagendar.
+Edito `trg_agendamento_after_insert` (nova migration CREATE OR REPLACE):
 
-**Contador `reagendadas`** já existe no retorno JSON; a retentativa por backoff também incrementa esse contador (semanticamente é "voltou pra fila").
+- Após bloco de confirmação, se nada foi enfileirado por estar dentro de `antecedencia_horas_minimo` (ou seja, `NEW.data_hora <= now() + (antec_horas||' h')::interval`), enfileira um lembrete imediato:
+  - `envio := now() + interval '2 minutes'`, desde que `< NEW.data_hora`.
+  - Usa `enfileirar_automacao(... 'lembrete'::modelo_tipo, envio, NEW.id, '{}'::jsonb, 'lembrete_encaixe', NEW.id)` — chave de idempotência distinta de `lembrete` normal.
+  - `enfileirar_automacao` já respeita `aceita_automacoes` e pausa global; a janela horária é aplicada no processador.
+- Lembrete N-horas-antes continua agendado normalmente (mesmo se cair antes do encaixe, ele já não roda pois `lembrete_em < now()` é filtrado).
 
-### 3. Guarda anti-loop em `claim_mensagens_pendentes`
+## Aceite
 
-Para garantir que nada com `tentativas >= max` seja reclamado mesmo se algo escapar, ajustar a função via migration:
+- Conflito mesmo profissional → exceção amigável; horário livre OK.
+- Fora do expediente ou em bloqueio → bloqueado; Configurações → Agenda permite editar.
+- Insert com `data_hora` em <12h → uma linha em `mensagens_agendadas` tipo `lembrete`, `agendado_para ≈ now()+2min`, idempotência `lembrete_encaixe`, respeitando opt-out.
 
-```sql
-CREATE OR REPLACE FUNCTION public.claim_mensagens_pendentes(_limit integer)
-RETURNS SETOF public.mensagens_agendadas
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
-DECLARE
-  _max int;
-BEGIN
-  SELECT COALESCE((valor)::text::int, 3) INTO _max
-    FROM public.settings WHERE chave = 'automacoes_max_tentativas';
-  _max := COALESCE(_max, 3);
+## Arquivos
 
-  RETURN QUERY
-  UPDATE public.mensagens_agendadas m
-     SET status = 'enviando'::public.msg_status,
-         tentativas = COALESCE(m.tentativas, 0) + 1,
-         updated_at = now()
-   WHERE m.id IN (
-     SELECT id FROM public.mensagens_agendadas
-      WHERE status = 'pendente'::public.msg_status
-        AND agendado_para <= now()
-        AND COALESCE(tentativas, 0) < _max
-      ORDER BY agendado_para
-      LIMIT GREATEST(1, _limit)
-      FOR UPDATE SKIP LOCKED
-   )
-  RETURNING m.*;
-END $$;
-```
-
-Isso garante o corte por tentativas mesmo se a edge function tiver bug, e impede reenvio infinito.
-
-### 4. Sem mudanças
-- Comportamento de shadowban (pausa automática + alerta + `break`) permanece intocado.
-- Janela de envio, claim atômico, tetos hora/dia, delays Z-API, opt-out: nada muda.
-- `reagendar_mensagem` continua igual (já volta para `pendente`).
-
-### Critérios de aceite
-- [ ] Falha não-shadowban com `tentativas < max` → volta para `pendente` com `agendado_para = now + backoff(tent)`, `erro` preenchido, status NÃO vira `falhou`.
-- [ ] Após 3ª tentativa fracassada → `falhou` definitivo.
-- [ ] Shadowban no 1º envio → `falhou` + pausa automática, sem retry.
-- [ ] Mensagem com `tentativas >= max` nunca mais é reclamada por `claim_mensagens_pendentes`.
+- `supabase/migrations/<ts>_agenda_overlap_expediente_encaixe.sql` (trigger overlap, tabela bloqueios + RLS/GRANTs, settings expediente, novo trigger after_insert com encaixe).
+- `src/routes/_authenticated.app.configuracoes.agenda.tsx` (nova tela).
+- `src/routes/_authenticated.app.configuracoes.index.tsx` (novo item).
+- `src/hooks/useAgendaConfig.ts` (queries/mutations expediente + bloqueios).
+- `src/components/agenda/AgendamentoSheet.tsx` (mapeamento de mensagens de erro, mínimo).
