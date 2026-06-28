@@ -176,8 +176,18 @@ function ConsentBadge({
 
 function ResumoTab({ pacienteId }: { pacienteId: string }) {
   const { data } = useAgendamentosDoPaciente(pacienteId);
+  const { data: paciente } = usePaciente(pacienteId);
+  const [agendarMsgOpen, setAgendarMsgOpen] = useState(false);
   return (
     <div className="flex flex-col gap-3 pb-28">
+      <Button
+        variant="outline"
+        className="self-start"
+        onClick={() => setAgendarMsgOpen(true)}
+      >
+        <Clock className="h-4 w-4 mr-2" />
+        Agendar mensagem
+      </Button>
       <div className="text-caption uppercase tracking-wide text-muted-foreground">
         Agendamentos
       </div>
