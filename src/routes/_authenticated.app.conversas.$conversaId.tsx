@@ -38,6 +38,8 @@ import {
   VideoMessage,
   DocumentMessage,
 } from "@/components/conversa/MediaBubble";
+import { AgendarMensagemSheet } from "@/components/automacoes/AgendarMensagemSheet";
+
 
 type Message = {
   id: string;
