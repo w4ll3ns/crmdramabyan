@@ -1,19 +1,21 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { Home, MessageCircle, Calendar, Filter, Users, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useUnreadCount } from "@/hooks/useUnreadCount";
 
 type Item = { to: string; label: string; icon: LucideIcon; badge?: number };
 
-const items: Item[] = [
-  { to: "/app", label: "Início", icon: Home },
-  { to: "/app/conversas", label: "Conversas", icon: MessageCircle, badge: 3 },
-  { to: "/app/agenda", label: "Agenda", icon: Calendar },
-  { to: "/app/funil", label: "Funil", icon: Filter },
-  { to: "/app/pacientes", label: "Pacientes", icon: Users },
-];
-
 export function BottomNav() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const unread = useUnreadCount();
+  const items: Item[] = [
+    { to: "/app", label: "Início", icon: Home },
+    { to: "/app/conversas", label: "Conversas", icon: MessageCircle, badge: unread },
+    { to: "/app/agenda", label: "Agenda", icon: Calendar },
+    { to: "/app/funil", label: "Funil", icon: Filter },
+    { to: "/app/pacientes", label: "Pacientes", icon: Users },
+  ];
+
 
   return (
     <nav

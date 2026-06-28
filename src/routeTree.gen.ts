@@ -20,6 +20,8 @@ import { Route as AuthenticatedAppPacientesRouteImport } from './routes/_authent
 import { Route as AuthenticatedAppFunilRouteImport } from './routes/_authenticated.app.funil'
 import { Route as AuthenticatedAppConversasRouteImport } from './routes/_authenticated.app.conversas'
 import { Route as AuthenticatedAppAgendaRouteImport } from './routes/_authenticated.app.agenda'
+import { Route as AuthenticatedAppConversasConversaIdRouteImport } from './routes/_authenticated.app.conversas.$conversaId'
+import { Route as AuthenticatedAppConfiguracoesZapiRouteImport } from './routes/_authenticated.app.configuracoes.zapi'
 
 const StyleRoute = StyleRouteImport.update({
   id: '/style',
@@ -77,6 +79,18 @@ const AuthenticatedAppAgendaRoute = AuthenticatedAppAgendaRouteImport.update({
   path: '/agenda',
   getParentRoute: () => AuthenticatedAppRoute,
 } as any)
+const AuthenticatedAppConversasConversaIdRoute =
+  AuthenticatedAppConversasConversaIdRouteImport.update({
+    id: '/$conversaId',
+    path: '/$conversaId',
+    getParentRoute: () => AuthenticatedAppConversasRoute,
+  } as any)
+const AuthenticatedAppConfiguracoesZapiRoute =
+  AuthenticatedAppConfiguracoesZapiRouteImport.update({
+    id: '/configuracoes/zapi',
+    path: '/configuracoes/zapi',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -85,10 +99,12 @@ export interface FileRoutesByFullPath {
   '/style': typeof StyleRoute
   '/app': typeof AuthenticatedAppRouteWithChildren
   '/app/agenda': typeof AuthenticatedAppAgendaRoute
-  '/app/conversas': typeof AuthenticatedAppConversasRoute
+  '/app/conversas': typeof AuthenticatedAppConversasRouteWithChildren
   '/app/funil': typeof AuthenticatedAppFunilRoute
   '/app/pacientes': typeof AuthenticatedAppPacientesRoute
   '/app/': typeof AuthenticatedAppIndexRoute
+  '/app/configuracoes/zapi': typeof AuthenticatedAppConfiguracoesZapiRoute
+  '/app/conversas/$conversaId': typeof AuthenticatedAppConversasConversaIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -96,10 +112,12 @@ export interface FileRoutesByTo {
   '/reset-password': typeof ResetPasswordRoute
   '/style': typeof StyleRoute
   '/app/agenda': typeof AuthenticatedAppAgendaRoute
-  '/app/conversas': typeof AuthenticatedAppConversasRoute
+  '/app/conversas': typeof AuthenticatedAppConversasRouteWithChildren
   '/app/funil': typeof AuthenticatedAppFunilRoute
   '/app/pacientes': typeof AuthenticatedAppPacientesRoute
   '/app': typeof AuthenticatedAppIndexRoute
+  '/app/configuracoes/zapi': typeof AuthenticatedAppConfiguracoesZapiRoute
+  '/app/conversas/$conversaId': typeof AuthenticatedAppConversasConversaIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -110,10 +128,12 @@ export interface FileRoutesById {
   '/style': typeof StyleRoute
   '/_authenticated/app': typeof AuthenticatedAppRouteWithChildren
   '/_authenticated/app/agenda': typeof AuthenticatedAppAgendaRoute
-  '/_authenticated/app/conversas': typeof AuthenticatedAppConversasRoute
+  '/_authenticated/app/conversas': typeof AuthenticatedAppConversasRouteWithChildren
   '/_authenticated/app/funil': typeof AuthenticatedAppFunilRoute
   '/_authenticated/app/pacientes': typeof AuthenticatedAppPacientesRoute
   '/_authenticated/app/': typeof AuthenticatedAppIndexRoute
+  '/_authenticated/app/configuracoes/zapi': typeof AuthenticatedAppConfiguracoesZapiRoute
+  '/_authenticated/app/conversas/$conversaId': typeof AuthenticatedAppConversasConversaIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -128,6 +148,8 @@ export interface FileRouteTypes {
     | '/app/funil'
     | '/app/pacientes'
     | '/app/'
+    | '/app/configuracoes/zapi'
+    | '/app/conversas/$conversaId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -139,6 +161,8 @@ export interface FileRouteTypes {
     | '/app/funil'
     | '/app/pacientes'
     | '/app'
+    | '/app/configuracoes/zapi'
+    | '/app/conversas/$conversaId'
   id:
     | '__root__'
     | '/'
@@ -152,6 +176,8 @@ export interface FileRouteTypes {
     | '/_authenticated/app/funil'
     | '/_authenticated/app/pacientes'
     | '/_authenticated/app/'
+    | '/_authenticated/app/configuracoes/zapi'
+    | '/_authenticated/app/conversas/$conversaId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -241,23 +267,55 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppAgendaRouteImport
       parentRoute: typeof AuthenticatedAppRoute
     }
+    '/_authenticated/app/conversas/$conversaId': {
+      id: '/_authenticated/app/conversas/$conversaId'
+      path: '/$conversaId'
+      fullPath: '/app/conversas/$conversaId'
+      preLoaderRoute: typeof AuthenticatedAppConversasConversaIdRouteImport
+      parentRoute: typeof AuthenticatedAppConversasRoute
+    }
+    '/_authenticated/app/configuracoes/zapi': {
+      id: '/_authenticated/app/configuracoes/zapi'
+      path: '/configuracoes/zapi'
+      fullPath: '/app/configuracoes/zapi'
+      preLoaderRoute: typeof AuthenticatedAppConfiguracoesZapiRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
   }
 }
 
+interface AuthenticatedAppConversasRouteChildren {
+  AuthenticatedAppConversasConversaIdRoute: typeof AuthenticatedAppConversasConversaIdRoute
+}
+
+const AuthenticatedAppConversasRouteChildren: AuthenticatedAppConversasRouteChildren =
+  {
+    AuthenticatedAppConversasConversaIdRoute:
+      AuthenticatedAppConversasConversaIdRoute,
+  }
+
+const AuthenticatedAppConversasRouteWithChildren =
+  AuthenticatedAppConversasRoute._addFileChildren(
+    AuthenticatedAppConversasRouteChildren,
+  )
+
 interface AuthenticatedAppRouteChildren {
   AuthenticatedAppAgendaRoute: typeof AuthenticatedAppAgendaRoute
-  AuthenticatedAppConversasRoute: typeof AuthenticatedAppConversasRoute
+  AuthenticatedAppConversasRoute: typeof AuthenticatedAppConversasRouteWithChildren
   AuthenticatedAppFunilRoute: typeof AuthenticatedAppFunilRoute
   AuthenticatedAppPacientesRoute: typeof AuthenticatedAppPacientesRoute
   AuthenticatedAppIndexRoute: typeof AuthenticatedAppIndexRoute
+  AuthenticatedAppConfiguracoesZapiRoute: typeof AuthenticatedAppConfiguracoesZapiRoute
 }
 
 const AuthenticatedAppRouteChildren: AuthenticatedAppRouteChildren = {
   AuthenticatedAppAgendaRoute: AuthenticatedAppAgendaRoute,
-  AuthenticatedAppConversasRoute: AuthenticatedAppConversasRoute,
+  AuthenticatedAppConversasRoute: AuthenticatedAppConversasRouteWithChildren,
   AuthenticatedAppFunilRoute: AuthenticatedAppFunilRoute,
   AuthenticatedAppPacientesRoute: AuthenticatedAppPacientesRoute,
   AuthenticatedAppIndexRoute: AuthenticatedAppIndexRoute,
+  AuthenticatedAppConfiguracoesZapiRoute:
+    AuthenticatedAppConfiguracoesZapiRoute,
 }
 
 const AuthenticatedAppRouteWithChildren =
