@@ -129,6 +129,11 @@ Deno.serve(async (req) => {
     // === Mensagem recebida (ReceivedCallback) ===
     // Ignora grupos/canais por enquanto (não casamos com paciente).
     if (!isReceivedMessageEvent) {
+      await sb.from("webhook_events").insert({
+        source: "z-api",
+        event_type: "ignored_unsupported_event",
+        payload: { eventType, original: body },
+      });
       return new Response(
         JSON.stringify({ ok: true, ignored: "unsupported_event", eventType }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } },
