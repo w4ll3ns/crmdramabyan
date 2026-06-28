@@ -206,7 +206,9 @@ function ResumoTab({ pacienteId }: { pacienteId: string }) {
                     · {a.duracao_minutos} min
                   </div>
                 </div>
-                <StatusBadge tone={meta.tone}>{meta.label}</StatusBadge>
+                <StatusBadge variant={STATUS_VARIANT[a.status as keyof typeof STATUS_VARIANT]}>
+                  {STATUS_LABEL[a.status as keyof typeof STATUS_LABEL]}
+                </StatusBadge>
               </li>
             );
           })}
