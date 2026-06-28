@@ -1,12 +1,43 @@
-// Gerencia instância Z-API (apenas admin): QR, status, desconectar, restart
+// Gerencia instância Z-API (apenas admin): QR, status, webhooks, desconectar, restart
+// Alinhado com https://developer.z-api.io
 import {
   adminClient,
+  buildWebhookUrl,
   corsHeaders,
   getActiveInstance,
   userClient,
   zapiBase,
   zapiHeaders,
 } from "../_shared/zapi.ts";
+
+type MeResponse = {
+  connected?: boolean;
+  phone?: string;
+  connectedPhone?: string;
+  phoneNumber?: string;
+  receivedCallbackUrl?: string;
+  deliveryCallbackUrl?: string;
+  messageStatusCallbackUrl?: string;
+  connectedCallbackUrl?: string;
+  disconnectedCallbackUrl?: string;
+  receiveCallbackSentByMe?: boolean;
+};
+
+function webhookStatusFromMe(me: MeResponse, expected: string | null) {
+  const fields = {
+    received: String(me.receivedCallbackUrl ?? ""),
+    delivery: String(me.deliveryCallbackUrl ?? ""),
+    status: String(me.messageStatusCallbackUrl ?? ""),
+    connected: String(me.connectedCallbackUrl ?? ""),
+    disconnected: String(me.disconnectedCallbackUrl ?? ""),
+  };
+  const matches = Object.fromEntries(
+    Object.entries(fields).map(([k, v]) => [k, !!expected && v === expected]),
+  );
+  const allConfigured =
+    !!expected && Object.values(matches).every(Boolean);
+  return { fields, matches, allConfigured };
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -62,11 +93,7 @@ Deno.serve(async (req) => {
     }
     const base = zapiBase(instance);
     const headers = zapiHeaders(instance);
-
-    const webhookToken = Deno.env.get("ZAPI_WEBHOOK_TOKEN");
-    const webhookUrl = webhookToken
-      ? `${Deno.env.get("SUPABASE_URL")}/functions/v1/zapi-webhook?token=${webhookToken}`
-      : null;
+    const webhookUrl = buildWebhookUrl();
 
     let path = "";
     let method = "GET";
@@ -79,6 +106,8 @@ Deno.serve(async (req) => {
         path = "/me";
         break;
       case "configure-webhook":
+        // PUT /update-every-webhooks aponta TODOS os callbacks
+        // (received/delivery/status/connected/disconnected) para a mesma URL.
         if (!webhookUrl) {
           return new Response(
             JSON.stringify({ error: "Token do webhook não configurado" }),
@@ -88,9 +117,9 @@ Deno.serve(async (req) => {
             },
           );
         }
-        path = "/update-webhook-received";
+        path = "/update-every-webhooks";
         method = "PUT";
-        zapiBody = { value: webhookUrl };
+        zapiBody = { value: webhookUrl, notifySentByMe: true };
         break;
       case "qr-code":
         path = "/qr-code/image";
@@ -122,29 +151,33 @@ Deno.serve(async (req) => {
     });
     const json = await res.json().catch(() => ({}));
 
-    // Sincroniza connected/phone_number quando status
     if (action === "status" && res.ok) {
       const connected = !!json.connected;
       const meRes = await fetch(`${base}/me`, { headers });
-      const meJson = await meRes.json().catch(() => ({}));
-      const receivedCallbackUrl = String(meJson.receivedCallbackUrl ?? "");
-      const receivedWebhookConfigured = !!(
-        webhookUrl && receivedCallbackUrl === webhookUrl
-      );
+      const me = (await meRes.json().catch(() => ({}))) as MeResponse;
+      const webhookStatus = webhookStatusFromMe(me, webhookUrl);
       await sb
         .from("zapi_instances")
         .update({
           connected,
           status: connected ? "connected" : json.session || "disconnected",
-          phone_number: meJson.phone ?? meJson.phoneNumber ?? instance.phone_number,
+          phone_number:
+            me.connectedPhone ??
+            me.phone ??
+            me.phoneNumber ??
+            instance.phone_number,
         })
         .eq("id", instance.id);
       return new Response(
         JSON.stringify({
           ...json,
           connected,
-          receivedWebhookConfigured,
-          webhookConfigured: receivedWebhookConfigured,
+          connectedPhone: me.connectedPhone ?? me.phone ?? null,
+          webhooks: webhookStatus.fields,
+          webhookMatches: webhookStatus.matches,
+          webhookConfigured: webhookStatus.allConfigured,
+          receivedWebhookConfigured: webhookStatus.matches.received,
+          receiveCallbackSentByMe: !!me.receiveCallbackSentByMe,
         }),
         {
           status: res.status,
@@ -153,16 +186,17 @@ Deno.serve(async (req) => {
       );
     }
     if (action === "me" && res.ok) {
-      const receivedCallbackUrl = String(json.receivedCallbackUrl ?? "");
-      const receivedWebhookConfigured = !!(
-        webhookUrl && receivedCallbackUrl === webhookUrl
-      );
+      const me = json as MeResponse;
+      const webhookStatus = webhookStatusFromMe(me, webhookUrl);
       return new Response(
         JSON.stringify({
-          connected: !!json.connected,
-          receivedWebhookConfigured,
-          webhookConfigured: receivedWebhookConfigured,
-          receiveCallbackSentByMe: !!json.receiveCallbackSentByMe,
+          connected: !!me.connected,
+          connectedPhone: me.connectedPhone ?? me.phone ?? null,
+          webhooks: webhookStatus.fields,
+          webhookMatches: webhookStatus.matches,
+          webhookConfigured: webhookStatus.allConfigured,
+          receivedWebhookConfigured: webhookStatus.matches.received,
+          receiveCallbackSentByMe: !!me.receiveCallbackSentByMe,
         }),
         {
           status: res.status,
@@ -172,7 +206,7 @@ Deno.serve(async (req) => {
     }
     if (action === "configure-webhook" && res.ok) {
       return new Response(
-        JSON.stringify({ ok: true, receivedWebhookConfigured: true }),
+        JSON.stringify({ ok: true, webhookConfigured: true, value: webhookUrl }),
         {
           status: res.status,
           headers: { ...corsHeaders, "Content-Type": "application/json" },

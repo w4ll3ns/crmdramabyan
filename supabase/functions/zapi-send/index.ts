@@ -2,6 +2,7 @@
 import {
   adminClient,
   corsHeaders,
+  docExtensionFromMime,
   getActiveInstance,
   normalizePhone,
   userClient,
@@ -122,17 +123,21 @@ Deno.serve(async (req) => {
       case "audio":
         endpoint = "/send-audio";
         payload.audio = body.media_url;
+        payload.waveform = true;
+        payload.viewOnce = false;
         break;
       case "video":
         endpoint = "/send-video";
         payload.video = body.media_url;
         if (body.content) payload.caption = body.content;
         break;
-      case "document":
-        endpoint = "/send-document/pdf";
+      case "document": {
+        const ext = docExtensionFromMime(body.media_mime_type, body.filename);
+        endpoint = `/send-document/${ext}`;
         payload.document = body.media_url;
-        payload.fileName = body.filename ?? "arquivo";
+        payload.fileName = body.filename ?? `arquivo.${ext}`;
         break;
+      }
     }
 
     const zRes = await fetch(`${base}${endpoint}`, {
