@@ -75,6 +75,38 @@ function HomePage() {
         </div>
       </div>
 
+      <SectionHeader title="Configurações" />
+      <div className="px-5 grid gap-2">
+        <Link
+          to="/app/configuracoes/automacoes"
+          className="rounded-2xl bg-card shadow-soft p-4 flex items-center gap-3"
+        >
+          <span className="h-10 w-10 rounded-full bg-primary/15 text-primary flex items-center justify-center">
+            <Zap className="h-5 w-5" strokeWidth={1.5} />
+          </span>
+          <div className="flex-1">
+            <div className="text-label">Automações</div>
+            <p className="text-caption text-muted-foreground">
+              Modelos, janela de envio e pausa global.
+            </p>
+          </div>
+        </Link>
+        <Link
+          to="/app/configuracoes/zapi"
+          className="rounded-2xl bg-card shadow-soft p-4 flex items-center gap-3"
+        >
+          <span className="h-10 w-10 rounded-full bg-primary/15 text-primary flex items-center justify-center">
+            <Smartphone className="h-5 w-5" strokeWidth={1.5} />
+          </span>
+          <div className="flex-1">
+            <div className="text-label">WhatsApp (Z-API)</div>
+            <p className="text-caption text-muted-foreground">
+              Conexão e webhooks.
+            </p>
+          </div>
+        </Link>
+      </div>
+
       <Fab aria-label="Novo">
         <Plus className="h-6 w-6" strokeWidth={1.75} />
       </Fab>
