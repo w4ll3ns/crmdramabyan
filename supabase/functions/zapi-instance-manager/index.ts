@@ -172,12 +172,15 @@ Deno.serve(async (req) => {
         JSON.stringify({
           ...json,
           connected,
+          smartphoneConnected: !!json.smartphoneConnected,
+          session: json.session ?? null,
           connectedPhone: me.connectedPhone ?? me.phone ?? null,
           webhooks: webhookStatus.fields,
           webhookMatches: webhookStatus.matches,
           webhookConfigured: webhookStatus.allConfigured,
           receivedWebhookConfigured: webhookStatus.matches.received,
           receiveCallbackSentByMe: !!me.receiveCallbackSentByMe,
+          checkedAt: new Date().toISOString(),
         }),
         {
           status: res.status,
