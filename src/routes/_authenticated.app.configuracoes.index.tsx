@@ -45,6 +45,13 @@ function ConfiguracoesIndex() {
           adminOnly
         />
         <SettingsItem
+          to="/app/configuracoes/agenda"
+          icon={CalendarDays}
+          title="Agenda"
+          subtitle="Expediente, bloqueios e feriados."
+          adminOnly
+        />
+        <SettingsItem
           to="/app/configuracoes/automacoes"
           icon={Zap}
           title="Automações"
