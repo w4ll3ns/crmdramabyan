@@ -11,6 +11,12 @@ import {
   FileText,
   CalendarPlus,
   MessageSquareText,
+  Mic,
+  Camera,
+  Image as ImageIcon,
+  File as FileIcon,
+  Trash2,
+  X,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { BrandAvatar } from "@/components/brand/Avatar";
@@ -18,6 +24,13 @@ import { BottomSheet } from "@/components/brand/BottomSheet";
 import { cn } from "@/lib/utils";
 import { formatTime } from "@/lib/format";
 import { toast } from "sonner";
+import {
+  uploadChatMedia,
+  kindFromMime,
+  MAX_BYTES,
+  type MediaKind,
+} from "@/lib/chatMedia";
+import { useAudioRecorder, extFromMime } from "@/hooks/useAudioRecorder";
 
 type Message = {
   id: string;
@@ -134,6 +147,13 @@ function Bubble({ m }: { m: Message }) {
   );
 }
 
+function formatElapsed(ms: number) {
+  const s = Math.floor(ms / 1000);
+  const mm = Math.floor(s / 60).toString().padStart(1, "0");
+  const ss = (s % 60).toString().padStart(2, "0");
+  return `${mm}:${ss}`;
+}
+
 function ConversaDetail() {
   const { conversaId } = Route.useParams();
   const navigate = useNavigate();
@@ -143,12 +163,25 @@ function ConversaDetail() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [modelosOpen, setModelosOpen] = useState(false);
   const [anexoOpen, setAnexoOpen] = useState(false);
-  const [anexoUrl, setAnexoUrl] = useState("");
-  const [anexoTipo, setAnexoTipo] = useState<"image" | "audio" | "video" | "document">(
-    "image",
-  );
-  const [anexoLegenda, setAnexoLegenda] = useState("");
+
+  // Preview de arquivo escolhido
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [pendingPreviewUrl, setPendingPreviewUrl] = useState<string | null>(null);
+  const [pendingCaption, setPendingCaption] = useState("");
+  const [uploading, setUploading] = useState(false);
+
+  // Inputs ocultos
+  const galleryInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const docInputRef = useRef<HTMLInputElement>(null);
+
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Áudio
+  const recorder = useAudioRecorder();
+  const recBtnRef = useRef<HTMLButtonElement>(null);
+  const recStartXRef = useRef<number>(0);
+  const [recCancelling, setRecCancelling] = useState(false);
 
   const { data: conversa } = useQuery({
     queryKey: ["conversa", conversaId],
@@ -215,6 +248,13 @@ function ConversaDetail() {
     });
   }, [messages?.length]);
 
+  // Cleanup preview URL
+  useEffect(() => {
+    return () => {
+      if (pendingPreviewUrl) URL.revokeObjectURL(pendingPreviewUrl);
+    };
+  }, [pendingPreviewUrl]);
+
   const nome = conversa?.paciente?.nome || conversa?.telefone || "Conversa";
 
   async function send(payload: {
@@ -236,6 +276,7 @@ function ConversaDetail() {
       qc.invalidateQueries({ queryKey: ["conversas"] });
     } catch (e: any) {
       toast.error("Falha ao enviar", { description: e?.message ?? String(e) });
+      throw e;
     } finally {
       setSending(false);
     }
@@ -245,22 +286,126 @@ function ConversaDetail() {
     const t = text.trim();
     if (!t) return;
     setText("");
-    await send({ type: "text", content: t });
+    await send({ type: "text", content: t }).catch(() => setText(t));
   }
 
-  async function handleSendAnexo() {
-    if (!anexoUrl.trim()) return;
-    await send({
-      type: anexoTipo,
-      media_url: anexoUrl.trim(),
-      content: anexoLegenda.trim() || undefined,
-    });
-    setAnexoUrl("");
-    setAnexoLegenda("");
+  function clearPending() {
+    if (pendingPreviewUrl) URL.revokeObjectURL(pendingPreviewUrl);
+    setPendingFile(null);
+    setPendingPreviewUrl(null);
+    setPendingCaption("");
+  }
+
+  function pickFile(input: HTMLInputElement | null) {
+    if (!input) return;
+    input.value = "";
+    input.click();
+  }
+
+  function onFileChosen(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (f.size > MAX_BYTES) {
+      toast.error("Arquivo muito grande", { description: "Máximo 16 MB." });
+      return;
+    }
     setAnexoOpen(false);
+    setPendingFile(f);
+    setPendingCaption("");
+    const isMedia = f.type.startsWith("image/") || f.type.startsWith("video/");
+    setPendingPreviewUrl(isMedia ? URL.createObjectURL(f) : null);
+  }
+
+  async function handleSendPendingFile() {
+    if (!pendingFile) return;
+    setUploading(true);
+    try {
+      const up = await uploadChatMedia(pendingFile, conversaId);
+      await send({
+        type: up.kind,
+        media_url: up.url,
+        media_mime_type: up.mime,
+        filename: up.filename,
+        content: pendingCaption.trim() || undefined,
+      });
+      clearPending();
+    } catch (e: any) {
+      toast.error("Falha no upload", { description: e?.message ?? String(e) });
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function sendRecordedAudio(blob: Blob, mime: string) {
+    const ext = extFromMime(mime);
+    const file = new File([blob], `audio-${Date.now()}.${ext}`, { type: mime });
+    try {
+      setUploading(true);
+      const up = await uploadChatMedia(file, conversaId, { mime, filename: file.name });
+      await send({
+        type: "audio",
+        media_url: up.url,
+        media_mime_type: up.mime,
+        filename: up.filename,
+      });
+    } catch (e: any) {
+      toast.error("Falha ao enviar áudio", { description: e?.message ?? String(e) });
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handleMicPointerDown(e: React.PointerEvent<HTMLButtonElement>) {
+    if (sending || uploading) return;
+    e.preventDefault();
+    recStartXRef.current = e.clientX;
+    setRecCancelling(false);
+    try {
+      recBtnRef.current?.setPointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+    try {
+      await recorder.start();
+    } catch (err: any) {
+      toast.error("Microfone indisponível", {
+        description: err?.message ?? "Permita o acesso ao microfone.",
+      });
+    }
+  }
+
+  function handleMicPointerMove(e: React.PointerEvent<HTMLButtonElement>) {
+    if (!recorder.isRecording) return;
+    const dx = e.clientX - recStartXRef.current;
+    setRecCancelling(dx < -80);
+  }
+
+  async function handleMicPointerUp(e: React.PointerEvent<HTMLButtonElement>) {
+    try {
+      recBtnRef.current?.releasePointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+    if (!recorder.isRecording) return;
+    if (recCancelling) {
+      recorder.cancel();
+      setRecCancelling(false);
+      toast.message("Áudio cancelado");
+      return;
+    }
+    const result = await recorder.stop();
+    setRecCancelling(false);
+    if (!result) return;
+    if (result.durationMs < 600) {
+      toast.message("Segure para gravar");
+      return;
+    }
+    await sendRecordedAudio(result.blob, result.mime);
   }
 
   const list = useMemo(() => messages ?? [], [messages]);
+  const showSend = text.trim().length > 0;
+  const isRec = recorder.isRecording;
 
   return (
     <div className="flex flex-col h-dvh bg-background">
@@ -319,45 +464,120 @@ function ConversaDetail() {
         )}
       </div>
 
-      {/* Input */}
+      {/* Inputs ocultos para escolher arquivo do aparelho */}
+      <input
+        ref={galleryInputRef}
+        type="file"
+        accept="image/*,video/*"
+        className="hidden"
+        onChange={onFileChosen}
+      />
+      <input
+        ref={cameraInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={onFileChosen}
+      />
+      <input
+        ref={docInputRef}
+        type="file"
+        accept="application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv"
+        className="hidden"
+        onChange={onFileChosen}
+      />
+
+      {/* Input bar */}
       <div className="border-t border-border bg-card pb-safe">
-        <div className="flex items-end gap-2 px-3 pt-2 pb-2">
-          <button
-            onClick={() => setAnexoOpen(true)}
-            className="h-10 w-10 shrink-0 inline-flex items-center justify-center rounded-full active:bg-muted/60 text-muted-foreground"
-            aria-label="Anexar"
-          >
-            <Paperclip className="h-5 w-5" strokeWidth={1.5} />
-          </button>
-          <button
-            onClick={() => setModelosOpen(true)}
-            className="h-10 px-3 shrink-0 inline-flex items-center gap-1 rounded-full bg-muted text-label text-foreground active:bg-muted/70"
-          >
-            <MessageSquareText className="h-4 w-4" strokeWidth={1.5} />
-            <span className="hidden sm:inline">Modelo</span>
-          </button>
-          <textarea
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleSendText();
-              }
-            }}
-            rows={1}
-            placeholder="Mensagem"
-            className="flex-1 resize-none min-h-[40px] max-h-[120px] px-3 py-2 rounded-2xl border border-border bg-background text-label placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
-          />
-          <button
-            onClick={handleSendText}
-            disabled={sending || !text.trim()}
-            className="h-10 w-10 shrink-0 inline-flex items-center justify-center rounded-full bg-primary text-primary-foreground shadow-soft disabled:opacity-50 active:scale-95 transition-transform"
-            aria-label="Enviar"
-          >
-            <Send className="h-5 w-5" strokeWidth={1.75} />
-          </button>
-        </div>
+        {isRec ? (
+          <div className="flex items-center gap-3 px-3 pt-2 pb-2 h-[56px]">
+            <span className="inline-flex h-3 w-3 rounded-full bg-destructive animate-pulse" />
+            <span className="text-label tabular-nums w-12">
+              {formatElapsed(recorder.elapsedMs)}
+            </span>
+            <div
+              className={cn(
+                "flex-1 text-caption",
+                recCancelling ? "text-destructive font-medium" : "text-muted-foreground",
+              )}
+            >
+              {recCancelling ? "Solte para cancelar" : "← arraste para cancelar"}
+            </div>
+            <button
+              ref={recBtnRef}
+              onPointerMove={handleMicPointerMove}
+              onPointerUp={handleMicPointerUp}
+              onPointerCancel={handleMicPointerUp}
+              className={cn(
+                "h-12 w-12 shrink-0 inline-flex items-center justify-center rounded-full text-primary-foreground shadow-soft",
+                recCancelling ? "bg-destructive" : "bg-primary",
+              )}
+              aria-label="Soltar para enviar"
+            >
+              {recCancelling ? (
+                <Trash2 className="h-5 w-5" strokeWidth={1.75} />
+              ) : (
+                <Mic className="h-5 w-5" strokeWidth={1.75} />
+              )}
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-end gap-2 px-3 pt-2 pb-2">
+            <button
+              onClick={() => setAnexoOpen(true)}
+              disabled={uploading}
+              className="h-10 w-10 shrink-0 inline-flex items-center justify-center rounded-full active:bg-muted/60 text-muted-foreground disabled:opacity-50"
+              aria-label="Anexar"
+            >
+              <Paperclip className="h-5 w-5" strokeWidth={1.5} />
+            </button>
+            <button
+              onClick={() => setModelosOpen(true)}
+              className="h-10 px-3 shrink-0 inline-flex items-center gap-1 rounded-full bg-muted text-label text-foreground active:bg-muted/70"
+            >
+              <MessageSquareText className="h-4 w-4" strokeWidth={1.5} />
+              <span className="hidden sm:inline">Modelo</span>
+            </button>
+            <textarea
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSendText();
+                }
+              }}
+              rows={1}
+              placeholder="Mensagem"
+              className="flex-1 resize-none min-h-[40px] max-h-[120px] px-3 py-2 rounded-2xl border border-border bg-background text-label placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+            />
+            {showSend ? (
+              <button
+                onClick={handleSendText}
+                disabled={sending}
+                className="h-10 w-10 shrink-0 inline-flex items-center justify-center rounded-full bg-primary text-primary-foreground shadow-soft disabled:opacity-50 active:scale-95 transition-transform"
+                aria-label="Enviar"
+              >
+                <Send className="h-5 w-5" strokeWidth={1.75} />
+              </button>
+            ) : (
+              <button
+                ref={recBtnRef}
+                onPointerDown={handleMicPointerDown}
+                onPointerMove={handleMicPointerMove}
+                onPointerUp={handleMicPointerUp}
+                onPointerCancel={handleMicPointerUp}
+                onContextMenu={(e) => e.preventDefault()}
+                disabled={sending || uploading}
+                className="h-10 w-10 shrink-0 inline-flex items-center justify-center rounded-full bg-primary text-primary-foreground shadow-soft disabled:opacity-50 active:scale-95 transition-transform touch-none select-none"
+                aria-label="Segurar para gravar"
+              >
+                <Mic className="h-5 w-5" strokeWidth={1.75} />
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Menu */}
@@ -434,59 +654,102 @@ function ConversaDetail() {
         )}
       </BottomSheet>
 
-      {/* Anexo */}
+      {/* Anexar do aparelho */}
       <BottomSheet
         open={anexoOpen}
         onOpenChange={setAnexoOpen}
-        title="Enviar mídia"
-        description="Cole a URL pública do arquivo."
+        title="Enviar arquivo"
+        description="Escolha de onde enviar."
       >
-        <div className="flex flex-col gap-3">
-          <div className="flex gap-2">
-            {(["image", "audio", "video", "document"] as const).map((t) => (
-              <button
-                key={t}
-                onClick={() => setAnexoTipo(t)}
-                className={cn(
-                  "flex-1 py-2 rounded-xl text-label border",
-                  anexoTipo === t
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "bg-card border-border text-foreground",
-                )}
-              >
-                {t === "image"
-                  ? "Imagem"
-                  : t === "audio"
-                    ? "Áudio"
-                    : t === "video"
-                      ? "Vídeo"
-                      : "Doc"}
-              </button>
-            ))}
-          </div>
-          <input
-            value={anexoUrl}
-            onChange={(e) => setAnexoUrl(e.target.value)}
-            placeholder="https://..."
-            className="h-11 px-3 rounded-2xl border border-border bg-background text-label focus:outline-none focus:ring-2 focus:ring-primary/40"
-          />
-          {anexoTipo !== "audio" ? (
-            <input
-              value={anexoLegenda}
-              onChange={(e) => setAnexoLegenda(e.target.value)}
-              placeholder="Legenda (opcional)"
-              className="h-11 px-3 rounded-2xl border border-border bg-background text-label focus:outline-none focus:ring-2 focus:ring-primary/40"
-            />
-          ) : null}
+        <div className="grid grid-cols-3 gap-3">
           <button
-            onClick={handleSendAnexo}
-            disabled={sending || !anexoUrl.trim()}
-            className="h-11 rounded-2xl bg-primary text-primary-foreground text-label shadow-soft disabled:opacity-50"
+            onClick={() => pickFile(galleryInputRef.current)}
+            className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-muted active:bg-muted/70"
           >
-            Enviar
+            <ImageIcon className="h-6 w-6 text-primary" strokeWidth={1.5} />
+            <span className="text-caption">Galeria</span>
+          </button>
+          <button
+            onClick={() => pickFile(cameraInputRef.current)}
+            className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-muted active:bg-muted/70"
+          >
+            <Camera className="h-6 w-6 text-primary" strokeWidth={1.5} />
+            <span className="text-caption">Câmera</span>
+          </button>
+          <button
+            onClick={() => pickFile(docInputRef.current)}
+            className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-muted active:bg-muted/70"
+          >
+            <FileIcon className="h-6 w-6 text-primary" strokeWidth={1.5} />
+            <span className="text-caption">Documento</span>
           </button>
         </div>
       </BottomSheet>
+
+      {/* Preview do arquivo escolhido */}
+      <BottomSheet
+        open={!!pendingFile}
+        onOpenChange={(o) => {
+          if (!o && !uploading) clearPending();
+        }}
+        title="Enviar para o paciente"
+      >
+        {pendingFile ? (
+          <div className="flex flex-col gap-3">
+            <FilePreview file={pendingFile} previewUrl={pendingPreviewUrl} />
+            {!pendingFile.type.startsWith("audio/") ? (
+              <input
+                value={pendingCaption}
+                onChange={(e) => setPendingCaption(e.target.value)}
+                placeholder="Legenda (opcional)"
+                className="h-11 px-3 rounded-2xl border border-border bg-background text-label focus:outline-none focus:ring-2 focus:ring-primary/40"
+              />
+            ) : null}
+            <div className="flex gap-2">
+              <button
+                onClick={clearPending}
+                disabled={uploading}
+                className="h-11 px-4 inline-flex items-center justify-center gap-1 rounded-2xl border border-border text-label disabled:opacity-50"
+              >
+                <X className="h-4 w-4" /> Cancelar
+              </button>
+              <button
+                onClick={handleSendPendingFile}
+                disabled={uploading}
+                className="flex-1 h-11 rounded-2xl bg-primary text-primary-foreground text-label shadow-soft disabled:opacity-50 inline-flex items-center justify-center gap-2"
+              >
+                {uploading ? "Enviando…" : (
+                  <>
+                    <Send className="h-4 w-4" /> Enviar
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </BottomSheet>
+    </div>
+  );
+}
+
+function FilePreview({ file, previewUrl }: { file: File; previewUrl: string | null }) {
+  const kind: MediaKind = kindFromMime(file.type);
+  const sizeMb = (file.size / (1024 * 1024)).toFixed(2);
+  if (kind === "image" && previewUrl) {
+    return (
+      <img src={previewUrl} alt="" className="rounded-xl max-h-72 w-full object-contain bg-muted" />
+    );
+  }
+  if (kind === "video" && previewUrl) {
+    return <video src={previewUrl} controls className="rounded-xl max-h-72 w-full bg-muted" />;
+  }
+  return (
+    <div className="flex items-center gap-3 p-3 rounded-2xl border border-border bg-muted/40">
+      <FileIcon className="h-8 w-8 text-primary" strokeWidth={1.5} />
+      <div className="min-w-0">
+        <div className="text-label truncate">{file.name}</div>
+        <div className="text-caption text-muted-foreground">{sizeMb} MB</div>
+      </div>
     </div>
   );
 }
