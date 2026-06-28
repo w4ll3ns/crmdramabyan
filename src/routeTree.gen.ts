@@ -26,6 +26,7 @@ import { Route as AuthenticatedAppPacientesPacienteIdRouteImport } from './route
 import { Route as AuthenticatedAppConversasConversaIdRouteImport } from './routes/_authenticated.app.conversas.$conversaId'
 import { Route as AuthenticatedAppConfiguracoesZapiRouteImport } from './routes/_authenticated.app.configuracoes.zapi'
 import { Route as AuthenticatedAppConfiguracoesVariaveisRouteImport } from './routes/_authenticated.app.configuracoes.variaveis'
+import { Route as AuthenticatedAppConfiguracoesClinicaRouteImport } from './routes/_authenticated.app.configuracoes.clinica'
 import { Route as AuthenticatedAppConfiguracoesAutomacoesRouteImport } from './routes/_authenticated.app.configuracoes.automacoes'
 
 const StyleRoute = StyleRouteImport.update({
@@ -120,6 +121,12 @@ const AuthenticatedAppConfiguracoesVariaveisRoute =
     path: '/configuracoes/variaveis',
     getParentRoute: () => AuthenticatedAppRoute,
   } as any)
+const AuthenticatedAppConfiguracoesClinicaRoute =
+  AuthenticatedAppConfiguracoesClinicaRouteImport.update({
+    id: '/configuracoes/clinica',
+    path: '/configuracoes/clinica',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
 const AuthenticatedAppConfiguracoesAutomacoesRoute =
   AuthenticatedAppConfiguracoesAutomacoesRouteImport.update({
     id: '/configuracoes/automacoes',
@@ -138,6 +145,7 @@ export interface FileRoutesByFullPath {
   '/app/pacientes': typeof AuthenticatedAppPacientesRouteWithChildren
   '/app/': typeof AuthenticatedAppIndexRoute
   '/app/configuracoes/automacoes': typeof AuthenticatedAppConfiguracoesAutomacoesRoute
+  '/app/configuracoes/clinica': typeof AuthenticatedAppConfiguracoesClinicaRoute
   '/app/configuracoes/variaveis': typeof AuthenticatedAppConfiguracoesVariaveisRoute
   '/app/configuracoes/zapi': typeof AuthenticatedAppConfiguracoesZapiRoute
   '/app/conversas/$conversaId': typeof AuthenticatedAppConversasConversaIdRoute
@@ -156,6 +164,7 @@ export interface FileRoutesByTo {
   '/app/pacientes': typeof AuthenticatedAppPacientesRouteWithChildren
   '/app': typeof AuthenticatedAppIndexRoute
   '/app/configuracoes/automacoes': typeof AuthenticatedAppConfiguracoesAutomacoesRoute
+  '/app/configuracoes/clinica': typeof AuthenticatedAppConfiguracoesClinicaRoute
   '/app/configuracoes/variaveis': typeof AuthenticatedAppConfiguracoesVariaveisRoute
   '/app/configuracoes/zapi': typeof AuthenticatedAppConfiguracoesZapiRoute
   '/app/conversas/$conversaId': typeof AuthenticatedAppConversasConversaIdRoute
@@ -177,6 +186,7 @@ export interface FileRoutesById {
   '/_authenticated/app/pacientes': typeof AuthenticatedAppPacientesRouteWithChildren
   '/_authenticated/app/': typeof AuthenticatedAppIndexRoute
   '/_authenticated/app/configuracoes/automacoes': typeof AuthenticatedAppConfiguracoesAutomacoesRoute
+  '/_authenticated/app/configuracoes/clinica': typeof AuthenticatedAppConfiguracoesClinicaRoute
   '/_authenticated/app/configuracoes/variaveis': typeof AuthenticatedAppConfiguracoesVariaveisRoute
   '/_authenticated/app/configuracoes/zapi': typeof AuthenticatedAppConfiguracoesZapiRoute
   '/_authenticated/app/conversas/$conversaId': typeof AuthenticatedAppConversasConversaIdRoute
@@ -198,6 +208,7 @@ export interface FileRouteTypes {
     | '/app/pacientes'
     | '/app/'
     | '/app/configuracoes/automacoes'
+    | '/app/configuracoes/clinica'
     | '/app/configuracoes/variaveis'
     | '/app/configuracoes/zapi'
     | '/app/conversas/$conversaId'
@@ -216,6 +227,7 @@ export interface FileRouteTypes {
     | '/app/pacientes'
     | '/app'
     | '/app/configuracoes/automacoes'
+    | '/app/configuracoes/clinica'
     | '/app/configuracoes/variaveis'
     | '/app/configuracoes/zapi'
     | '/app/conversas/$conversaId'
@@ -236,6 +248,7 @@ export interface FileRouteTypes {
     | '/_authenticated/app/pacientes'
     | '/_authenticated/app/'
     | '/_authenticated/app/configuracoes/automacoes'
+    | '/_authenticated/app/configuracoes/clinica'
     | '/_authenticated/app/configuracoes/variaveis'
     | '/_authenticated/app/configuracoes/zapi'
     | '/_authenticated/app/conversas/$conversaId'
@@ -375,6 +388,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppConfiguracoesVariaveisRouteImport
       parentRoute: typeof AuthenticatedAppRoute
     }
+    '/_authenticated/app/configuracoes/clinica': {
+      id: '/_authenticated/app/configuracoes/clinica'
+      path: '/configuracoes/clinica'
+      fullPath: '/app/configuracoes/clinica'
+      preLoaderRoute: typeof AuthenticatedAppConfiguracoesClinicaRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
     '/_authenticated/app/configuracoes/automacoes': {
       id: '/_authenticated/app/configuracoes/automacoes'
       path: '/configuracoes/automacoes'
@@ -406,6 +426,7 @@ interface AuthenticatedAppRouteChildren {
   AuthenticatedAppPacientesRoute: typeof AuthenticatedAppPacientesRouteWithChildren
   AuthenticatedAppIndexRoute: typeof AuthenticatedAppIndexRoute
   AuthenticatedAppConfiguracoesAutomacoesRoute: typeof AuthenticatedAppConfiguracoesAutomacoesRoute
+  AuthenticatedAppConfiguracoesClinicaRoute: typeof AuthenticatedAppConfiguracoesClinicaRoute
   AuthenticatedAppConfiguracoesVariaveisRoute: typeof AuthenticatedAppConfiguracoesVariaveisRoute
   AuthenticatedAppConfiguracoesZapiRoute: typeof AuthenticatedAppConfiguracoesZapiRoute
   AuthenticatedAppConversasConversaIdRoute: typeof AuthenticatedAppConversasConversaIdRoute
@@ -420,6 +441,8 @@ const AuthenticatedAppRouteChildren: AuthenticatedAppRouteChildren = {
   AuthenticatedAppIndexRoute: AuthenticatedAppIndexRoute,
   AuthenticatedAppConfiguracoesAutomacoesRoute:
     AuthenticatedAppConfiguracoesAutomacoesRoute,
+  AuthenticatedAppConfiguracoesClinicaRoute:
+    AuthenticatedAppConfiguracoesClinicaRoute,
   AuthenticatedAppConfiguracoesVariaveisRoute:
     AuthenticatedAppConfiguracoesVariaveisRoute,
   AuthenticatedAppConfiguracoesZapiRoute:
