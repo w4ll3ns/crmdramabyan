@@ -6,7 +6,10 @@ import {
   adminClient,
   corsHeaders,
   extractExternalId,
+  isLid,
+  lidDigits,
   normalizePhone,
+  resolveLidToPhone,
 } from "../_shared/zapi.ts";
 
 type MessageType = "text" | "image" | "audio" | "video" | "document";
