@@ -20,6 +20,14 @@ const SHADOWBAN_PATTERNS = [
   "whatsapp rejected sending this message",
 ];
 
+// Backoff por nº de tentativa (1ª, 2ª, 3ª...). Falha transitória reagenda
+// com este atraso em vez de marcar 'falhou' direto.
+const BACKOFF_MIN = [10, 30, 60];
+function backoffMsFor(tent: number): number {
+  const i = Math.max(0, Math.min((tent || 1) - 1, BACKOFF_MIN.length - 1));
+  return BACKOFF_MIN[i] * 60 * 1000;
+}
+
 function getSetting<T>(rows: Setting[], chave: string, def: T): T {
   const r = rows.find((x) => x.chave === chave);
   return (r?.valor as T) ?? def;
