@@ -981,6 +981,7 @@ export type Database = {
       }
       run_regua_aniversario: { Args: never; Returns: number }
       run_regua_reativacao: { Args: never; Returns: number }
+      set_cron_secret: { Args: { _value: string }; Returns: undefined }
     }
     Enums: {
       agendamento_status:
