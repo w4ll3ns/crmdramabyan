@@ -39,6 +39,8 @@ function ZapiConfig() {
   const isAdmin = useIsAdmin();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const [qr, setQr] = useState<string | null>(null);
+  const [polling, setPolling] = useState(false);
   const { data: instance, isLoading } = useQuery({
     queryKey: ["zapi-instance"],
     queryFn: fetchInstance,
@@ -76,9 +78,6 @@ function ZapiConfig() {
       });
     }
   }, [instance]);
-
-  const [qr, setQr] = useState<string | null>(null);
-  const [polling, setPolling] = useState(false);
 
   // Poll status enquanto QR aberto
   useEffect(() => {
