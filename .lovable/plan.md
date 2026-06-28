@@ -1,64 +1,75 @@
-# Anexos do aparelho + gravação de áudio na conversa
+# Player de áudio estilo WhatsApp + visualização de mídia na conversa
 
-Hoje o botão de anexo só aceita URL pública. Vamos trocar por upload real do aparelho (foto, vídeo, documento) e adicionar um botão de microfone que grava áudio igual ao WhatsApp.
+Hoje o `Bubble` mostra mídia com elementos HTML crus (`<audio controls>`, `<img>`, `<video controls>`, link de documento). Vamos trocar por componentes próprios que se parecem com o WhatsApp e suportam download.
 
-## 1. Storage no backend
+## 1. `AudioPlayer` (novo componente)
 
-Criar bucket privado `chat-media` (Lovable Cloud) com policies:
-- `authenticated` pode `INSERT` em `chat-media/<auth.uid()>/...`
-- `authenticated` pode `SELECT` apenas dos próprios arquivos
-- Arquivos enviados para a Z-API precisam de URL pública temporária → geramos **Signed URL** (ex.: 7 dias) e usamos essa URL como `media_url` no `zapi-send`.
+`src/components/conversa/AudioPlayer.tsx` — player customizado para áudios recebidos e enviados.
 
-Sem mudanças no schema de `messages` — já guarda `media_url` e `media_mime_type`.
-
-## 2. Tela da conversa (`_authenticated.app.conversas.$conversaId.tsx`)
-
-Substituir o `BottomSheet` de "Anexo" atual por uma ação que abre o seletor nativo do aparelho:
-
-- Botão clipe (📎) abre BottomSheet com 3 opções:
-  - **Foto/Vídeo da galeria** → `<input type="file" accept="image/*,video/*">`
-  - **Câmera** → `<input type="file" accept="image/*" capture="environment">`
-  - **Documento** → `<input type="file" accept="application/pdf,.doc,.docx,.xls,.xlsx,.txt">`
-- Ao escolher: mostra preview (thumb da imagem/nome do arquivo) + campo de legenda opcional + botão Enviar.
-- Fluxo de envio:
-  1. Upload do `File` para `chat-media/<userId>/<conversaId>/<uuid>.<ext>` via `supabase.storage`.
-  2. Gera `createSignedUrl` (7 dias).
-  3. Chama `zapi-send` com `type` derivado do mime (`image|video|document|audio`), `media_url` = signed URL, `media_mime_type`, `filename`, `content` = legenda.
-- Indicador de progresso (Progress) durante upload.
-- Validação de tamanho (limite 16 MB — limite prático da Z-API/WhatsApp).
-
-## 3. Gravação de áudio estilo WhatsApp
-
-Novo botão de microfone que aparece **no lugar do botão Enviar quando o input de texto está vazio** (igual WhatsApp). Quando há texto, mostra Enviar; sem texto, mostra Microfone.
+Layout (horizontal, dentro da bolha):
+- Botão circular **Play/Pause** (44px) à esquerda.
+- **Barra de progresso** (track fino + thumb) clicável e arrastável (`<input type="range">` estilizado) que mostra a posição.
+- **Tempo** à direita: enquanto parado mostra duração total; durante a reprodução mostra tempo restante (`-0:12`), igual WhatsApp.
+- Botão **Download** (ícone seta) no canto que dispara download do arquivo (fetch do blob + `URL.createObjectURL` + `<a download>` para forçar mesmo em URL assinada).
+- Cores: usa tokens do tema (`bg-primary/15` herdado da bolha; track `bg-muted-foreground/30`, fill `bg-primary`).
 
 Comportamento:
-- **Press-and-hold (touch/mouse)** no microfone → começa a gravar usando `MediaRecorder` (`audio/webm;codecs=opus` quando suportado, fallback `audio/mp4` no iOS Safari).
-- Durante a gravação: o input vira uma faixa com timer (`0:03`), ícone vermelho pulsando, e dica "← arraste para cancelar".
-- **Soltar** → para a gravação, faz upload e envia (`type: "audio"`).
-- **Arrastar para a esquerda** (> 80px) ou soltar fora → cancela e descarta.
-- Pedido de permissão de microfone na primeira gravação; se negado, toast explicando.
-- Alternativa para acessibilidade: toque curto no mic abre modo "tap to record" com botões Parar/Cancelar (cobre desktop sem hold confortável).
+- Usa `<audio>` invisível interno, lê `duration`, `currentTime`, dispara `timeupdate`.
+- Lida com `duration = Infinity` de WebM/OGG: faz seek hack (`audio.currentTime = 1e9`) para forçar a duração antes de exibir.
+- Só um player tocando por vez: um event bus simples (módulo singleton com `Set<HTMLAudioElement>`) pausa os outros ao dar play.
+- Mantém o áudio carregado em `preload="metadata"` para não baixar tudo de cara.
 
-Após upload do blob:
-1. Upload em `chat-media/<userId>/<conversaId>/<uuid>.ogg` (ou `.m4a`).
-2. Signed URL → `zapi-send` com `type:"audio"`, `media_mime_type` correto.
-3. Mostra bolha de áudio com `<audio controls>` (já existe no `Bubble`).
+Substitui o `<audio controls>` atual em `Bubble`.
 
-## 4. Detalhes técnicos
+## 2. `ImageMessage`, `VideoMessage`, `DocumentMessage` (no mesmo arquivo `MediaBubble.tsx`)
 
-- Novo componente `AttachmentSheet` e hook `useAudioRecorder` (em `src/components/conversa/` e `src/hooks/`).
-- Helper `uploadChatMedia(file, conversaId)` em `src/lib/chatMedia.ts` que faz upload + signed URL e retorna `{ url, mime, filename, type }`.
-- `zapi-send` **não muda** — continua recebendo `media_url`.
-- iOS Safari: `MediaRecorder` precisa de `audio/mp4` fallback; testar o mime suportado com `MediaRecorder.isTypeSupported`.
-- Mobile: o botão de microfone usa `onPointerDown/Up/Move` (cobre touch + mouse) com `setPointerCapture`.
+`src/components/conversa/MediaBubble.tsx`:
 
-## 5. Validação
+**ImageMessage**:
+- Thumb com `object-cover`, `max-h-72`, borda arredondada.
+- Clique abre **Lightbox** (Dialog full-screen do shadcn) com a imagem grande, botão Fechar e botão Download (mesma lógica blob-download).
+- Mostra um pequeno ícone de download flutuando no canto inferior direito da thumb também.
 
-- Enviar foto da galeria → aparece bolha com imagem e chega no WhatsApp do paciente.
-- Tirar foto pela câmera → idem.
-- Enviar PDF → bolha com ícone de documento e nome.
-- Segurar microfone 3s e soltar → bolha de áudio reproduzível, paciente recebe áudio.
-- Segurar microfone e arrastar para esquerda → cancela sem enviar.
-- Sem permissão de microfone → toast claro pedindo para permitir.
+**VideoMessage**:
+- `<video>` com poster (primeiro frame via `preload="metadata"` + `#t=0.1`) e `controls`.
+- Botão **Download** sobreposto no canto.
+- `max-h-72`, `rounded-xl`, `bg-black`.
 
-Sem mudanças em rotas, edge functions de webhook ou schema de banco.
+**DocumentMessage**:
+- Card com ícone grande do tipo (`FileText` para PDF/doc, `FileSpreadsheet` para xls, `File` genérico).
+- Nome do arquivo (do `filename` quando disponível ou derivado da URL).
+- Tamanho/extensão em texto pequeno (extensão extraída da URL/filename).
+- Dois botões pequenos: **Abrir** (link `target="_blank"`) e **Baixar** (download via blob).
+
+## 3. Helper `downloadMedia(url, filename)`
+
+`src/lib/downloadMedia.ts`:
+- `fetch(url)` → `blob()` → cria `<a>` com `download={filename}` e clica.
+- Fallback: se o fetch falhar (CORS na URL assinada), abre `window.open(url)` como degradação.
+- Deriva filename quando não fornecido: último segmento do path da URL.
+
+## 4. Ajustes em `Bubble`
+
+`src/routes/_authenticated.app.conversas.$conversaId.tsx`:
+- Importa `AudioPlayer`, `ImageMessage`, `VideoMessage`, `DocumentMessage`.
+- Para `audio`: passa também `direction` (cor do botão muda em outbound) e usa o `filename` se existir no `media_url`.
+- Para documento, deixa de embutir o `content_text` como nome — usa `filename` real; mantém legenda em parágrafo abaixo se `content_text` existir e for diferente.
+- Bolha de mídia sem padding nas bordas quando for imagem/vídeo (já tem `rounded-xl` interno), preserva padding para áudio e documento.
+
+## 5. Detalhes técnicos
+
+- Nenhuma mudança no schema, edge functions ou rotas.
+- Não muda o fluxo de envio; só a renderização das mensagens recebidas/enviadas.
+- O áudio gravado pelo usuário (WebM/OGG/MP4) usa o mesmo player — o hack de duração cobre os três casos.
+- Lightbox usa o `Dialog` do shadcn já presente, sem nova dep.
+- Ícones: `Play`, `Pause`, `Download`, `X`, `FileText`, `FileSpreadsheet`, `File` (todos do `lucide-react` já em uso).
+
+## 6. Validação
+
+- Áudio recebido toca/pausa com botão; barra avança; tempo restante decresce.
+- Clique na barra faz seek.
+- Tocar outro áudio pausa o anterior.
+- Botão de download salva o arquivo localmente com nome correto.
+- Imagem abre em lightbox; download funciona dentro do lightbox.
+- Vídeo reproduz inline; botão de download baixa o arquivo.
+- Documento mostra nome + extensão e abre/baixa.
