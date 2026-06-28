@@ -8,21 +8,27 @@ export function AppShell({
   headerRight,
   title,
   subtitle,
+  hideHeader = false,
+  hideNav = false,
 }: {
   children: ReactNode;
   fab?: ReactNode;
   headerRight?: ReactNode;
   title?: string;
   subtitle?: string;
+  hideHeader?: boolean;
+  hideNav?: boolean;
 }) {
   return (
     <div className="min-h-dvh bg-background flex flex-col">
-      <AppHeader title={title} subtitle={subtitle} right={headerRight} />
-      <main className="flex-1 pb-[96px]">{children}</main>
-      {fab ? (
+      {hideHeader ? null : (
+        <AppHeader title={title} subtitle={subtitle} right={headerRight} />
+      )}
+      <main className={hideNav ? "flex-1" : "flex-1 pb-[96px]"}>{children}</main>
+      {fab && !hideNav ? (
         <div className="fixed right-5 bottom-[88px] z-40 mb-safe">{fab}</div>
       ) : null}
-      <BottomNav />
+      {hideNav ? null : <BottomNav />}
     </div>
   );
 }
