@@ -39,6 +39,7 @@ import {
   DocumentMessage,
 } from "@/components/conversa/MediaBubble";
 import { AgendarMensagemSheet } from "@/components/automacoes/AgendarMensagemSheet";
+import { renderTemplate } from "@/lib/templates";
 
 
 type Message = {
@@ -78,15 +79,27 @@ async function fetchMessages(id: string): Promise<Message[]> {
   return (data ?? []) as Message[];
 }
 
-async function fetchModelos(): Promise<string[]> {
+type ModeloItem = { id: string; nome: string; tipo: string; corpo: string };
+
+async function fetchModelos(): Promise<ModeloItem[]> {
+  const { data, error } = await supabase
+    .from("modelos_mensagem")
+    .select("id, nome, tipo, corpo")
+    .eq("ativo", true)
+    .order("tipo", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as ModeloItem[];
+}
+
+async function fetchNomeClinica(): Promise<string> {
   const { data } = await supabase
     .from("settings")
     .select("valor")
-    .eq("chave", "mensagem_modelos")
+    .eq("chave", "clinica_nome")
     .maybeSingle();
-  const valor = data?.valor as unknown;
-  if (Array.isArray(valor)) return valor as string[];
-  return [];
+  const v = data?.valor as unknown;
+  if (typeof v === "string") return v;
+  return "";
 }
 
 function StatusIcon({ status }: { status: string | null }) {
@@ -201,9 +214,14 @@ function ConversaDetail() {
     staleTime: 5_000,
   });
   const { data: modelos } = useQuery({
-    queryKey: ["mensagem_modelos"],
+    queryKey: ["modelos_mensagem", "ativos"],
     queryFn: fetchModelos,
     staleTime: 60_000,
+  });
+  const { data: nomeClinica } = useQuery({
+    queryKey: ["clinica_nome"],
+    queryFn: fetchNomeClinica,
+    staleTime: 5 * 60_000,
   });
 
   // Marca como lida ao abrir
@@ -661,7 +679,7 @@ function ConversaDetail() {
         description={
           modelos && modelos.length > 0
             ? "Toque para inserir."
-            : "Cadastre modelos em Configurações."
+            : "Cadastre modelos em Configurações > Automações."
         }
       >
         {!modelos || modelos.length === 0 ? (
@@ -670,24 +688,40 @@ function ConversaDetail() {
           </div>
         ) : (
           <ul className="flex flex-col gap-1 max-h-[60vh] overflow-auto">
-            {modelos.map((m, i) => (
-              <li key={i}>
-                <button
-                  className="w-full text-left px-3 py-3 rounded-2xl active:bg-muted/60"
-                  onClick={() => {
-                    setText((t) => (t ? `${t}\n${m}` : m));
-                    setModelosOpen(false);
-                  }}
-                >
-                  <div className="text-label whitespace-pre-wrap line-clamp-3">
-                    {m}
-                  </div>
-                </button>
-              </li>
-            ))}
+            {modelos.map((m) => {
+              const nomePac = conversa?.paciente?.nome ?? "";
+              const vars: Record<string, string> = {
+                nome: nomePac,
+                primeiro_nome: nomePac.split(" ")[0] ?? "",
+                nome_clinica: nomeClinica ?? "",
+                data: "",
+                hora: "",
+                procedimento: "",
+                profissional: "",
+                valor: "",
+              };
+              const rendered = renderTemplate(m.corpo, vars);
+              return (
+                <li key={m.id}>
+                  <button
+                    className="w-full text-left px-3 py-3 rounded-2xl active:bg-muted/60"
+                    onClick={() => {
+                      setText((t) => (t ? `${t}\n${rendered}` : rendered));
+                      setModelosOpen(false);
+                    }}
+                  >
+                    <div className="text-label font-medium">{m.nome}</div>
+                    <div className="text-caption text-muted-foreground whitespace-pre-wrap line-clamp-2 mt-0.5">
+                      {rendered}
+                    </div>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         )}
       </BottomSheet>
+
 
       {/* Anexar do aparelho */}
       <BottomSheet
