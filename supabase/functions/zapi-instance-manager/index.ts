@@ -81,8 +81,7 @@ Deno.serve(async (req) => {
         path = "/restart";
         break;
       case "phone-code": {
-        const phone = url.searchParams.get("phone");
-        path = `/phone-code/${phone}`;
+        path = `/phone-code/${phoneParam}`;
         break;
       }
       default:
