@@ -321,22 +321,40 @@ Deno.serve(async (req) => {
       content_text = `📊 ${body.poll.name ?? body.poll.question ?? "Enquete"}\n${options}`;
     }
 
-    // Upsert paciente por telefone (somente para mensagens recebidas)
+    // Origem do lead: anúncio FB/IG vs whatsapp orgânico
+    const adRef = body.externalAdReply ?? null;
+    const isAdLead = !!adRef;
+    const origemLead = isAdLead ? "facebook_ad" : "whatsapp";
+
+    // Upsert paciente por telefone OU por wa_lid (somente para mensagens recebidas)
     let pacienteId: string | null = null;
     if (!fromMe) {
-      const { data: pacExistente } = await sb
-        .from("pacientes")
-        .select("id, foto_url")
-        .or(`telefone.eq.${telefone},whatsapp.eq.${telefone}`)
-        .limit(1)
-        .maybeSingle();
+      let pacExistente: { id: string; foto_url: string | null } | null = null;
+      if (waLid) {
+        const { data } = await sb
+          .from("pacientes")
+          .select("id, foto_url")
+          .eq("wa_lid", waLid)
+          .maybeSingle();
+        pacExistente = data ?? null;
+      }
+      if (!pacExistente) {
+        const { data } = await sb
+          .from("pacientes")
+          .select("id, foto_url")
+          .or(`telefone.eq.${telefone},whatsapp.eq.${telefone}`)
+          .limit(1)
+          .maybeSingle();
+        pacExistente = data ?? null;
+      }
       if (pacExistente) {
         pacienteId = pacExistente.id;
-        if (senderPhoto && !pacExistente.foto_url) {
-          await sb
-            .from("pacientes")
-            .update({ foto_url: senderPhoto })
-            .eq("id", pacienteId);
+        const patch: Record<string, unknown> = {};
+        if (senderPhoto && !pacExistente.foto_url) patch.foto_url = senderPhoto;
+        if (waLid) patch.wa_lid = waLid;
+        if (adRef) patch.lead_ad_ref = adRef;
+        if (Object.keys(patch).length) {
+          await sb.from("pacientes").update(patch).eq("id", pacienteId);
         }
       } else {
         const { data: pacNovo, error: pErr } = await sb
@@ -345,13 +363,27 @@ Deno.serve(async (req) => {
             nome,
             telefone,
             whatsapp: telefone,
-            origem: "whatsapp",
+            origem: origemLead,
             ...(senderPhoto ? { foto_url: senderPhoto } : {}),
+            ...(waLid ? { wa_lid: waLid } : {}),
+            ...(adRef ? { lead_ad_ref: adRef } : {}),
           })
           .select("id")
           .single();
         if (pErr) throw pErr;
         pacienteId = pacNovo.id;
+
+        // Se LID não foi resolvido, abre task pra identificação manual
+        if (waLid && telefone.startsWith("lid")) {
+          await sb.from("tasks").insert({
+            titulo: `Identificar lead de anúncio (${nome})`,
+            descricao:
+              "Lead chegou via anúncio do Facebook/Instagram com número mascarado pelo WhatsApp. Confirme o telefone real com o(a) paciente e atualize o cadastro.",
+            prioridade: "alta",
+            status: "pendente",
+            paciente_id: pacienteId,
+          });
+        }
       }
     } else {
       // Para fromMe, tenta achar o paciente existente (não cria a partir do próprio número)
