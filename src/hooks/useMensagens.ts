@@ -174,7 +174,7 @@ export function useUpdateAutomacaoSettings() {
     mutationFn: async (patch: Partial<AutomacaoSettings>) => {
       const rows = Object.entries(patch).map(([chave, valor]) => ({
         chave,
-        valor: valor as unknown,
+        valor: valor as never,
       }));
       for (const row of rows) {
         const { error } = await supabase
