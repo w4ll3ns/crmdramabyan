@@ -94,7 +94,7 @@ export function useCreateMensagemAgendada() {
         modelo_id: input.modelo_id ?? null,
         tipo: input.tipo,
         conteudo_renderizado: input.conteudo_renderizado,
-        variaveis: input.variaveis ?? {},
+        variaveis: (input.variaveis ?? {}) as never,
         agendado_para: input.agendado_para,
         origem: "manual",
         created_by: u.user?.id ?? null,
