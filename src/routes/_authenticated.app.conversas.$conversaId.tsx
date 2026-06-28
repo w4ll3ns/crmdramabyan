@@ -617,6 +617,20 @@ function ConversaDetail() {
             className="flex items-center gap-3 px-3 py-3 rounded-2xl active:bg-muted/60 text-left"
             onClick={() => {
               setMenuOpen(false);
+              if (!conversa?.paciente?.id) {
+                toast.error("Vincule um paciente antes de agendar.");
+                return;
+              }
+              setAgendarMsgOpen(true);
+            }}
+          >
+            <Clock className="h-5 w-5 text-primary" strokeWidth={1.5} />
+            <span className="text-label">Agendar mensagem</span>
+          </button>
+          <button
+            className="flex items-center gap-3 px-3 py-3 rounded-2xl active:bg-muted/60 text-left"
+            onClick={() => {
+              setMenuOpen(false);
               navigate({ to: "/app/funil" });
             }}
           >
@@ -625,6 +639,19 @@ function ConversaDetail() {
           </button>
         </div>
       </BottomSheet>
+
+      {conversa?.paciente?.id ? (
+        <AgendarMensagemSheet
+          open={agendarMsgOpen}
+          onOpenChange={setAgendarMsgOpen}
+          pacienteId={conversa.paciente.id}
+          conversationId={conversaId}
+          defaultVars={{
+            nome: conversa.paciente.nome,
+            primeiro_nome: (conversa.paciente.nome ?? "").split(" ")[0],
+          }}
+        />
+      ) : null}
 
       {/* Modelos */}
       <BottomSheet
