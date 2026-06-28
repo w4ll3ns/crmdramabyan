@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Download,
   X,
@@ -6,10 +6,13 @@ import {
   FileSpreadsheet,
   File as FileIcon,
   ExternalLink,
+  Loader2,
 } from "lucide-react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { downloadMedia, filenameFromUrl } from "@/lib/downloadMedia";
+import { convertHeicToJpegUrl, isHeic } from "@/lib/heicConvert";
 import { cn } from "@/lib/utils";
+
 
 const UNSUPPORTED_IMAGE_EXT = ["heic", "heif", "tif", "tiff"];
 
