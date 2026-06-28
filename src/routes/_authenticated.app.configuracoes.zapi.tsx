@@ -258,8 +258,9 @@ function ZapiConfig() {
             {instance?.connected || remoteStatus?.connected ? "Conectado" : "Desconectado"}
           </div>
           <div className="text-caption text-muted-foreground">
-            {instance?.phone_number || "Nenhum número vinculado"}
+            {phoneFromRemote || instance?.phone_number || "Nenhum número vinculado"}
           </div>
+
         </div>
         <button
           onClick={atualizarStatus}
@@ -305,18 +306,37 @@ function ZapiConfig() {
       <div className="rounded-2xl border border-border bg-card p-4 flex flex-col gap-3">
         <div className="text-label font-medium">Conexão</div>
         {instance ? (
-          <div className="rounded-xl bg-muted px-3 py-2 flex items-center gap-2">
-            <span
-              className={cn(
-                "h-2.5 w-2.5 rounded-full",
-                recebimentoAtivo ? "bg-success" : "bg-warning",
-              )}
-            />
-            <div className="text-caption text-muted-foreground">
-              {recebimentoAtivo
-                ? "Recebimento de mensagens ativo"
-                : "Recebimento de mensagens pendente"}
+          <div className="rounded-xl bg-muted px-3 py-2 flex flex-col gap-1">
+            <div className="flex items-center gap-2">
+              <span
+                className={cn(
+                  "h-2.5 w-2.5 rounded-full",
+                  webhooksOk ? "bg-success" : "bg-warning",
+                )}
+              />
+              <div className="text-caption text-muted-foreground">
+                {webhooksOk
+                  ? "Webhooks ativos (recebimento, envio, status, conexão)"
+                  : "Webhooks pendentes — clique em Registrar webhooks"}
+              </div>
             </div>
+            {remoteStatus?.webhookMatches ? (
+              <div className="text-[11px] text-muted-foreground pl-4 grid grid-cols-2 gap-x-3">
+                {(
+                  [
+                    ["received", "Ao receber"],
+                    ["delivery", "Ao enviar"],
+                    ["status", "Status msg."],
+                    ["connected", "Ao conectar"],
+                    ["disconnected", "Ao desconectar"],
+                  ] as const
+                ).map(([key, label]) => (
+                  <span key={key}>
+                    {remoteStatus.webhookMatches?.[key] ? "✓" : "•"} {label}
+                  </span>
+                ))}
+              </div>
+            ) : null}
           </div>
         ) : null}
         {qr ? (
@@ -354,23 +374,23 @@ function ZapiConfig() {
           disabled={!instance || !(instance.connected || remoteStatus?.connected)}
           className="h-11 rounded-2xl border border-border bg-card text-label disabled:opacity-50"
         >
-          Ativar recebimento de mensagens
+          {webhooksOk ? "Re-registrar webhooks" : "Registrar webhooks"}
         </button>
+
       </div>
 
       {/* Webhook */}
       <div className="rounded-2xl border border-border bg-card p-4 flex flex-col gap-2">
-        <div className="text-label font-medium">URL de Webhook</div>
+        <div className="text-label font-medium">URL do webhook único</div>
         <div className="text-caption text-muted-foreground">
-          Cadastre esta URL no painel da Z-API em "Webhook · Ao receber":
+          Z-API exige HTTPS. Esta URL é registrada automaticamente nos 5
+          callbacks (received / delivery / status / connected / disconnected)
+          ao clicar em "Registrar webhooks".
         </div>
         <code className="block px-3 py-2 rounded-xl bg-muted text-[12px] break-all">
           {(import.meta.env.VITE_SUPABASE_URL || "") +
-            "/functions/v1/zapi-webhook?token=<o token salvo nas variáveis do backend>"}
+            "/functions/v1/zapi-webhook?token=<ZAPI_WEBHOOK_TOKEN>"}
         </code>
-        <div className="text-[11px] text-muted-foreground">
-          O token vive como variável segura (ZAPI_WEBHOOK_TOKEN) — peça à equipe técnica.
-        </div>
       </div>
     </div>
   );
@@ -379,3 +399,4 @@ function ZapiConfig() {
 export const Route = createFileRoute("/_authenticated/app/configuracoes/zapi")({
   component: ZapiConfig,
 });
+
