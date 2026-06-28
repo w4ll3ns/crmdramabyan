@@ -14,7 +14,7 @@ import { convertHeicToJpegUrl, isHeic } from "@/lib/heicConvert";
 import { cn } from "@/lib/utils";
 
 
-const UNSUPPORTED_IMAGE_EXT = ["heic", "heif", "tif", "tiff"];
+const UNSUPPORTED_IMAGE_EXT = ["tif", "tiff"];
 
 function isUnsupportedImage(name: string) {
   const i = name.lastIndexOf(".");
@@ -27,8 +27,50 @@ export function ImageMessage({ src, filename }: { src: string; filename?: string
   const [failed, setFailed] = useState(false);
   const name = filename || filenameFromUrl(src, "imagem");
 
+  const needsHeic = isHeic(name);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(needsHeic ? null : src);
+  const [converting, setConverting] = useState<boolean>(needsHeic);
+
+  useEffect(() => {
+    if (!needsHeic) return;
+    let cancelled = false;
+    let createdUrl: string | null = null;
+    setConverting(true);
+    convertHeicToJpegUrl(src)
+      .then((url) => {
+        if (cancelled) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        createdUrl = url;
+        setPreviewUrl(url);
+        setConverting(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setConverting(false);
+        setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+      if (createdUrl) URL.revokeObjectURL(createdUrl);
+    };
+  }, [needsHeic, src]);
+
   if (failed || isUnsupportedImage(name)) {
     return <DocumentMessage src={src} filename={name} caption={null} />;
+  }
+
+  if (converting || !previewUrl) {
+    return (
+      <div className="flex items-center gap-3 min-w-[220px] rounded-xl bg-background/40 px-3 py-3 border border-border/60">
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        <div className="flex-1 min-w-0">
+          <div className="text-label truncate font-medium">{name}</div>
+          <div className="text-[10px] text-muted-foreground">Convertendo imagem…</div>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -39,7 +81,7 @@ export function ImageMessage({ src, filename }: { src: string; filename?: string
         className="relative block overflow-hidden rounded-xl group"
       >
         <img
-          src={src}
+          src={previewUrl}
           alt={name}
           loading="lazy"
           onError={() => setFailed(true)}
@@ -56,7 +98,7 @@ export function ImageMessage({ src, filename }: { src: string; filename?: string
         >
           <div className="relative flex items-center justify-center w-full h-[90vh]">
             <img
-              src={src}
+              src={previewUrl}
               alt={name}
               className="max-w-full max-h-full object-contain"
             />
@@ -82,6 +124,7 @@ export function ImageMessage({ src, filename }: { src: string; filename?: string
     </>
   );
 }
+
 
 export function VideoMessage({ src, filename }: { src: string; filename?: string }) {
   const name = filename || filenameFromUrl(src, "video");
