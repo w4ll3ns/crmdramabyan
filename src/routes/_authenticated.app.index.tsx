@@ -37,11 +37,15 @@ import {
   useRecallConversionRate,
   useTicketMedioPorProcedimento,
   useToday,
+  homeSummaryQueryOptions,
   type FunilEtapa,
 } from "@/hooks/useHomeDashboard";
 import { formatTime } from "@/lib/format";
 
 export const Route = createFileRoute("/_authenticated/app/")({
+  loader: ({ context }) => {
+    context.queryClient.prefetchQuery(homeSummaryQueryOptions);
+  },
   component: HomePage,
 });
 
