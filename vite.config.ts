@@ -14,7 +14,7 @@ const supabaseUrl =
 const supabasePublishableKey =
   process.env.VITE_SUPABASE_PUBLISHABLE_KEY ??
   process.env.SUPABASE_PUBLISHABLE_KEY ??
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJIUzI1NiIsInJlZiI6ImVoYmdycXFsZWx1aHl6d3doYm9sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI2NDgwNjcsImV4cCI6MjA5ODIyNDA2N30.Lhw17bNm_-lqi19xUxvswlU3HL84n7hQezvWEyYzfYc";
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVoYmdycXFsZWx1aHl6d3doYm9sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI2NDgwNjcsImV4cCI6MjA5ODIyNDA2N30.Lhw17bNm_-lqi19xUxvswlU3HL84n7hQezvWEyYzfYc";
 
 export default defineConfig({
   tanstackStart: {
