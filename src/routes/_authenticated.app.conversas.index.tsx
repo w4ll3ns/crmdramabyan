@@ -78,11 +78,7 @@ function ConversasPage() {
   const [search, setSearch] = useState("");
   const qc = useQueryClient();
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["conversas", "list", filter],
-    queryFn: () => fetchConversas(filter),
-    staleTime: 10_000,
-  });
+  const { data, isLoading } = useQuery(conversasListQueryOptions(filter));
 
   // Realtime
   useEffect(() => {
@@ -213,5 +209,8 @@ function ConversasPage() {
 }
 
 export const Route = createFileRoute("/_authenticated/app/conversas/")({
+  loader: ({ context }) => {
+    context.queryClient.prefetchQuery(conversasListQueryOptions("todas"));
+  },
   component: ConversasPage,
 });
