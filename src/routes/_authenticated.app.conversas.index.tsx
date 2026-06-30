@@ -22,46 +22,20 @@ type ConversaRow = {
 };
 
 async function fetchConversas(filter: Filter): Promise<ConversaRow[]> {
-  let query = supabase
-    .from("conversations")
-    .select(
-      `id, telefone, status, ultima_mensagem_em,
-       paciente:pacientes!conversations_paciente_id_fkey(id, nome, foto_url)`,
-    )
-    .order("ultima_mensagem_em", { ascending: false, nullsFirst: false })
-    .limit(100);
-  if (filter === "nao_lidas") query = query.eq("status", "nao_lida");
-  if (filter === "em_atendimento") query = query.eq("status", "em_atendimento");
-  const { data, error } = await query;
+  const { data, error } = await supabase.rpc("conversations_overview", {
+    p_filter: filter,
+    p_limit: 100,
+  });
   if (error) throw error;
+  return ((data ?? []) as unknown as ConversaRow[]);
+}
 
-  const ids = (data ?? []).map((c) => c.id);
-  if (ids.length === 0) return [];
-
-  // Última mensagem por conversa
-  const { data: msgs } = await supabase
-    .from("messages")
-    .select("conversation_id, content_text, type, direction, created_at, status")
-    .in("conversation_id", ids)
-    .order("created_at", { ascending: false });
-  const lastBy: Record<string, any> = {};
-  const unreadBy: Record<string, number> = {};
-  for (const m of msgs ?? []) {
-    if (!lastBy[m.conversation_id]) lastBy[m.conversation_id] = m;
-    if (m.direction === "inbound" && (m.status === null || m.status === "")) {
-      unreadBy[m.conversation_id] = (unreadBy[m.conversation_id] ?? 0) + 1;
-    }
-  }
-
-  return (data ?? []).map((c: any) => ({
-    id: c.id,
-    telefone: c.telefone,
-    status: c.status,
-    ultima_mensagem_em: c.ultima_mensagem_em,
-    paciente: c.paciente,
-    ultima_msg: lastBy[c.id] ?? null,
-    unread: unreadBy[c.id] ?? 0,
-  }));
+export function conversasListQueryOptions(filter: Filter) {
+  return {
+    queryKey: ["conversas", "list", filter] as const,
+    queryFn: () => fetchConversas(filter),
+    staleTime: 15_000,
+  };
 }
 
 function previewText(m: ConversaRow["ultima_msg"]): string {
