@@ -230,25 +230,10 @@ function ConversaDetail() {
   const recStartXRef = useRef<number>(0);
   const [recCancelling, setRecCancelling] = useState(false);
 
-  const { data: conversa } = useQuery({
-    queryKey: ["conversa", conversaId],
-    queryFn: () => fetchConversa(conversaId),
-  });
-  const { data: messages } = useQuery({
-    queryKey: ["conversa", conversaId, "messages"],
-    queryFn: () => fetchMessages(conversaId),
-    staleTime: 5_000,
-  });
-  const { data: modelos } = useQuery({
-    queryKey: ["modelos_mensagem", "ativos"],
-    queryFn: fetchModelos,
-    staleTime: 60_000,
-  });
-  const { data: nomeClinica } = useQuery({
-    queryKey: ["clinica_nome"],
-    queryFn: fetchNomeClinica,
-    staleTime: 5 * 60_000,
-  });
+  const { data: conversa } = useQuery(conversaHeaderOptions(conversaId));
+  const { data: messages } = useQuery(conversaMessagesOptions(conversaId));
+  const { data: modelos } = useQuery(modelosOptions);
+  const { data: nomeClinica } = useQuery(clinicaNomeOptions);
 
   // Marca como lida ao abrir
   useEffect(() => {
