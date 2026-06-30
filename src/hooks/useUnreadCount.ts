@@ -14,35 +14,35 @@ export function useUnreadCount() {
       if (error) throw error;
       return count ?? 0;
     },
-    staleTime: 5_000,
+    staleTime: 60_000,
   });
 
   useEffect(() => {
-    const conversationsChannel = supabase
-      .channel(`conversas-unread-conversations-${Math.random().toString(36).slice(2)}`)
+    let pending: ReturnType<typeof setTimeout> | null = null;
+    const schedule = () => {
+      if (pending) return;
+      pending = setTimeout(() => {
+        pending = null;
+        qc.invalidateQueries({ queryKey: ["conversas", "unread-count"] });
+      }, 2000);
+    };
+    const ch = supabase
+      .channel(`conversas-unread-${Math.random().toString(36).slice(2)}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "conversations" },
-        () => {
-          qc.invalidateQueries({ queryKey: ["conversas"] });
-        },
+        schedule,
       )
-      .subscribe();
-
-    const messagesChannel = supabase
-      .channel(`conversas-unread-messages-${Math.random().toString(36).slice(2)}`)
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "messages" },
-        () => {
-          qc.invalidateQueries({ queryKey: ["conversas"] });
-        },
+        schedule,
       )
       .subscribe();
 
     return () => {
-      supabase.removeChannel(conversationsChannel);
-      supabase.removeChannel(messagesChannel);
+      if (pending) clearTimeout(pending);
+      supabase.removeChannel(ch);
     };
   }, [qc]);
 

@@ -69,15 +69,41 @@ async function fetchConversa(id: string) {
 }
 
 async function fetchMessages(id: string): Promise<Message[]> {
+  // Janela inicial: últimas 50 mensagens (DESC + reverse) — primeiro frame rápido.
   const { data, error } = await supabase
     .from("messages")
     .select("*")
     .eq("conversation_id", id)
-    .order("created_at", { ascending: true })
-    .limit(200);
+    .order("created_at", { ascending: false })
+    .limit(50);
   if (error) throw error;
-  return (data ?? []) as Message[];
+  return ((data ?? []) as Message[]).reverse();
 }
+
+function conversaHeaderOptions(id: string) {
+  return {
+    queryKey: ["conversa", id] as const,
+    queryFn: () => fetchConversa(id),
+    staleTime: 30_000,
+  };
+}
+function conversaMessagesOptions(id: string) {
+  return {
+    queryKey: ["conversa", id, "messages"] as const,
+    queryFn: () => fetchMessages(id),
+    staleTime: 5_000,
+  };
+}
+const modelosOptions = {
+  queryKey: ["modelos_mensagem", "ativos"] as const,
+  queryFn: fetchModelos,
+  staleTime: 5 * 60_000,
+};
+const clinicaNomeOptions = {
+  queryKey: ["clinica_nome"] as const,
+  queryFn: fetchNomeClinica,
+  staleTime: 10 * 60_000,
+};
 
 type ModeloItem = { id: string; nome: string; tipo: string; corpo: string };
 
@@ -204,25 +230,10 @@ function ConversaDetail() {
   const recStartXRef = useRef<number>(0);
   const [recCancelling, setRecCancelling] = useState(false);
 
-  const { data: conversa } = useQuery({
-    queryKey: ["conversa", conversaId],
-    queryFn: () => fetchConversa(conversaId),
-  });
-  const { data: messages } = useQuery({
-    queryKey: ["conversa", conversaId, "messages"],
-    queryFn: () => fetchMessages(conversaId),
-    staleTime: 5_000,
-  });
-  const { data: modelos } = useQuery({
-    queryKey: ["modelos_mensagem", "ativos"],
-    queryFn: fetchModelos,
-    staleTime: 60_000,
-  });
-  const { data: nomeClinica } = useQuery({
-    queryKey: ["clinica_nome"],
-    queryFn: fetchNomeClinica,
-    staleTime: 5 * 60_000,
-  });
+  const { data: conversa } = useQuery(conversaHeaderOptions(conversaId));
+  const { data: messages } = useQuery(conversaMessagesOptions(conversaId));
+  const { data: modelos } = useQuery(modelosOptions);
+  const { data: nomeClinica } = useQuery(clinicaNomeOptions);
 
   // Marca como lida ao abrir
   useEffect(() => {
@@ -824,5 +835,13 @@ function FilePreview({ file, previewUrl }: { file: File; previewUrl: string | nu
 }
 
 export const Route = createFileRoute("/_authenticated/app/conversas/$conversaId")({
+  loader: ({ params, context }) => {
+    const qc = context.queryClient;
+    // Paraleliza tudo o que a tela precisa para o primeiro frame.
+    qc.prefetchQuery(conversaHeaderOptions(params.conversaId));
+    qc.prefetchQuery(conversaMessagesOptions(params.conversaId));
+    qc.prefetchQuery(modelosOptions);
+    qc.prefetchQuery(clinicaNomeOptions);
+  },
   component: ConversaDetail,
 });

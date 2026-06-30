@@ -975,6 +975,10 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      conversations_overview: {
+        Args: { p_filter?: string; p_limit?: number }
+        Returns: Json
+      }
       diag_cron_jobs: {
         Args: never
         Returns: {
@@ -1004,6 +1008,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      home_summary: { Args: never; Returns: Json }
       reagendar_mensagem: {
         Args: { _id: string; _nova: string }
         Returns: undefined
