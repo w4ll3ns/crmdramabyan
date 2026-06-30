@@ -1,83 +1,35 @@
-import { useEffect, useMemo } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef } from "react";
+import {
+  useQuery,
+  useQueryClient,
+  type UseQueryResult,
+} from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { endOfDay, startOfDay } from "@/lib/agenda";
 
-function startOfMonth(d = new Date()) {
-  return new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0);
-}
-
-export function useGreetingName() {
-  return useQuery({
-    queryKey: ["home", "greeting-name"],
-    queryFn: async (): Promise<string> => {
-      const { data: u } = await supabase.auth.getUser();
-      if (!u.user) return "Dra.";
-      const { data: prof } = await supabase
-        .from("profiles")
-        .select("name")
-        .eq("id", u.user.id)
-        .maybeSingle();
-      const raw =
-        prof?.name?.trim() ||
-        u.user.user_metadata?.name ||
-        u.user.user_metadata?.full_name ||
-        u.user.email?.split("@")[0] ||
-        "Dra.";
-      const first = String(raw).split(" ")[0] ?? "Dra.";
-      return first.charAt(0).toUpperCase() + first.slice(1);
-    },
-    staleTime: 5 * 60_000,
-  });
-}
-
-export function useLeadsNovosCount() {
-  return useQuery({
-    queryKey: ["home", "leads-novos"],
-    queryFn: async () => {
-      const since = new Date();
-      since.setDate(since.getDate() - 7);
-      const { count, error } = await supabase
-        .from("oportunidades")
-        .select("id", { count: "exact", head: true })
-        .eq("status", "aberta")
-        .eq("etapa", "novo_lead")
-        .gte("created_at", since.toISOString());
-      if (error) throw error;
-      return count ?? 0;
-    },
-    staleTime: 30_000,
-  });
-}
-
-export function useFollowupsAtrasadosCount() {
-  return useQuery({
-    queryKey: ["home", "followups-atrasados"],
-    queryFn: async () => {
-      const nowIso = new Date().toISOString();
-      const [op, tk] = await Promise.all([
-        supabase
-          .from("oportunidades")
-          .select("id", { count: "exact", head: true })
-          .eq("status", "aberta")
-          .lt("proximo_followup_em", nowIso),
-        supabase
-          .from("tasks")
-          .select("id", { count: "exact", head: true })
-          .eq("status", "pendente")
-          .lt("due_date", nowIso),
-      ]);
-      return (op.count ?? 0) + (tk.count ?? 0);
-    },
-    staleTime: 30_000,
-  });
-}
+/* ------------------------------------------------------------------ */
+/* Single RPC home_summary() backs every hook below                    */
+/* ------------------------------------------------------------------ */
 
 export type FunilEtapa = {
   etapa: string;
   label: string;
   count: number;
   valor: number;
+};
+
+export type TicketProc = { nome: string; ticket: number; volume: number };
+
+type HomeSummary = {
+  greeting: string;
+  leads_novos: number;
+  followups_atrasados: number;
+  a_confirmar_hoje: number;
+  unread: number;
+  mini_funil: Array<{ etapa: string; count: number; valor: number }>;
+  no_show: { faltou: number; total: number; rate: number };
+  ticket_medio: Array<{ nome: string; ticket: number; volume: number }>;
+  recall: { denom: number; num: number; rate: number };
 };
 
 const ETAPA_LABEL: Record<string, string> = {
@@ -92,141 +44,76 @@ const ETAPA_LABEL: Record<string, string> = {
   pos_procedimento: "Pós-procedimento",
 };
 
-const ETAPA_ORDER = [
-  "novo_lead",
-  "primeiro_contato",
-  "avaliacao_agendada",
-  "avaliacao_realizada",
-  "orcamento_enviado",
-  "negociacao",
-  "procedimento_agendado",
-];
+async function fetchHomeSummary(): Promise<HomeSummary> {
+  const { data, error } = await supabase.rpc("home_summary");
+  if (error) throw error;
+  return (data ?? {}) as HomeSummary;
+}
+
+export const homeSummaryQueryOptions = {
+  queryKey: ["home-summary"] as const,
+  queryFn: fetchHomeSummary,
+  staleTime: 30_000,
+};
+
+function useHomeSlice<T>(
+  select: (s: HomeSummary) => T,
+): UseQueryResult<T, Error> {
+  return useQuery({
+    ...homeSummaryQueryOptions,
+    select,
+  });
+}
+
+/* ------- Public hooks (compat with existing components) ------- */
+
+export function useGreetingName() {
+  return useHomeSlice((s) => s.greeting ?? "Dra.");
+}
+
+export function useLeadsNovosCount() {
+  return useHomeSlice((s) => s.leads_novos ?? 0);
+}
+
+export function useFollowupsAtrasadosCount() {
+  return useHomeSlice((s) => s.followups_atrasados ?? 0);
+}
 
 export function useMiniFunil() {
-  return useQuery({
-    queryKey: ["home", "mini-funil"],
-    queryFn: async (): Promise<FunilEtapa[]> => {
-      const { data, error } = await supabase
-        .from("oportunidades")
-        .select("etapa, valor_estimado")
-        .eq("status", "aberta");
-      if (error) throw error;
-      const map = new Map<string, { count: number; valor: number }>();
-      for (const r of data ?? []) {
-        const cur = map.get(r.etapa) ?? { count: 0, valor: 0 };
-        cur.count += 1;
-        cur.valor += Number(r.valor_estimado ?? 0);
-        map.set(r.etapa, cur);
-      }
-      return ETAPA_ORDER.filter((e) => map.has(e)).map((e) => ({
-        etapa: e,
-        label: ETAPA_LABEL[e] ?? e,
-        count: map.get(e)!.count,
-        valor: map.get(e)!.valor,
-      }));
-    },
-    staleTime: 30_000,
-  });
+  return useHomeSlice<FunilEtapa[]>((s) =>
+    (s.mini_funil ?? []).map((e) => ({
+      etapa: e.etapa,
+      label: ETAPA_LABEL[e.etapa] ?? e.etapa,
+      count: Number(e.count) || 0,
+      valor: Number(e.valor) || 0,
+    })),
+  );
 }
 
-export type TicketProc = { nome: string; ticket: number; volume: number };
-
-export function useTicketMedioPorProcedimento(enabled: boolean) {
-  return useQuery({
-    queryKey: ["home", "ticket-medio-proc"],
-    enabled,
-    queryFn: async (): Promise<TicketProc[]> => {
-      const since = new Date();
-      since.setDate(since.getDate() - 90);
-      const { data, error } = await supabase
-        .from("agendamentos")
-        .select("valor, procedimento:procedimentos!agendamentos_procedimento_id_fkey(nome)")
-        .eq("status", "realizado")
-        .gte("data_hora", since.toISOString())
-        .not("procedimento_id", "is", null);
-      if (error) throw error;
-      const map = new Map<string, { soma: number; n: number }>();
-      for (const r of (data ?? []) as Array<{
-        valor: number | null;
-        procedimento: { nome: string } | null;
-      }>) {
-        const nome = r.procedimento?.nome ?? "—";
-        const cur = map.get(nome) ?? { soma: 0, n: 0 };
-        if (r.valor != null) {
-          cur.soma += Number(r.valor);
-          cur.n += 1;
-        }
-        map.set(nome, cur);
-      }
-      return Array.from(map.entries())
-        .map(([nome, v]) => ({
-          nome,
-          ticket: v.n ? v.soma / v.n : 0,
-          volume: v.n,
-        }))
-        .filter((p) => p.volume > 0)
-        .sort((a, b) => b.volume - a.volume)
-        .slice(0, 3);
-    },
-    staleTime: 60_000,
-  });
+export function useTicketMedioPorProcedimento(_enabled: boolean) {
+  return useHomeSlice<TicketProc[]>((s) =>
+    (s.ticket_medio ?? []).map((t) => ({
+      nome: t.nome,
+      ticket: Number(t.ticket) || 0,
+      volume: Number(t.volume) || 0,
+    })),
+  );
 }
 
-export function useRecallConversionRate(enabled: boolean) {
-  return useQuery({
-    queryKey: ["home", "recall-rate"],
-    enabled,
-    queryFn: async () => {
-      const since = new Date();
-      since.setDate(since.getDate() - 30);
-      const { data: evts, error } = await supabase
-        .from("automacao_eventos")
-        .select("paciente_id, created_at")
-        .eq("tipo", "recall")
-        .gte("created_at", since.toISOString());
-      if (error) throw error;
-      const denom = evts?.length ?? 0;
-      if (!denom) return { rate: 0, denom: 0, num: 0 };
-      let num = 0;
-      for (const e of evts!) {
-        const { count } = await supabase
-          .from("agendamentos")
-          .select("id", { count: "exact", head: true })
-          .eq("paciente_id", e.paciente_id)
-          .gt("created_at", e.created_at);
-        if ((count ?? 0) > 0) num += 1;
-      }
-      return { rate: num / denom, denom, num };
-    },
-    staleTime: 60_000,
-  });
+export function useRecallConversionRate(_enabled: boolean) {
+  return useHomeSlice((s) => ({
+    rate: Number(s.recall?.rate) || 0,
+    denom: Number(s.recall?.denom) || 0,
+    num: Number(s.recall?.num) || 0,
+  }));
 }
 
-export function useNoShowMes(enabled: boolean) {
-  return useQuery({
-    queryKey: ["home", "no-show-mes"],
-    enabled,
-    queryFn: async () => {
-      const start = startOfMonth().toISOString();
-      const [faltou, realizado] = await Promise.all([
-        supabase
-          .from("agendamentos")
-          .select("id", { count: "exact", head: true })
-          .eq("status", "faltou")
-          .gte("data_hora", start),
-        supabase
-          .from("agendamentos")
-          .select("id", { count: "exact", head: true })
-          .eq("status", "realizado")
-          .gte("data_hora", start),
-      ]);
-      const f = faltou.count ?? 0;
-      const r = realizado.count ?? 0;
-      const total = f + r;
-      return { rate: total ? f / total : 0, faltou: f, total };
-    },
-    staleTime: 60_000,
-  });
+export function useNoShowMes(_enabled: boolean) {
+  return useHomeSlice((s) => ({
+    rate: Number(s.no_show?.rate) || 0,
+    faltou: Number(s.no_show?.faltou) || 0,
+    total: Number(s.no_show?.total) || 0,
+  }));
 }
 
 export function useToday() {
@@ -244,23 +131,39 @@ export function useToday() {
   }, []);
 }
 
+/* ------- Realtime: throttled invalidations ------- */
+
 export function useHomeRealtime() {
   const qc = useQueryClient();
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
+    const schedule = () => {
+      if (timerRef.current) return;
+      timerRef.current = setTimeout(() => {
+        timerRef.current = null;
+        qc.invalidateQueries({ queryKey: ["home-summary"] });
+      }, 2000);
+    };
     const ch = supabase
       .channel("home-dashboard")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "oportunidades" },
-        () => qc.invalidateQueries({ queryKey: ["home"] }),
+        schedule,
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "tasks" },
-        () => qc.invalidateQueries({ queryKey: ["home"] }),
+        schedule,
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "agendamentos" },
+        schedule,
       )
       .subscribe();
     return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
       supabase.removeChannel(ch);
     };
   }, [qc]);

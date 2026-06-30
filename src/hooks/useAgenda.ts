@@ -101,7 +101,7 @@ export function useAConfirmarHojeCount(): number {
       if (error) throw error;
       return count ?? 0;
     },
-    staleTime: 10_000,
+    staleTime: 60_000,
   });
   return q.data ?? 0;
 }
